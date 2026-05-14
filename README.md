@@ -63,10 +63,12 @@ Output CSV files are written to `data/`.
 
 ## Notes
 
-The original E-Prime files contain encoded internal document/script content, so
-this recreation keeps the logic explicit rather than attempting a binary-level
-translation. The resource images and sounds are used directly from:
+The E-Prime (version 3) files are placed within the corresponding Template folders, 
+and represent the original paper version of the paradigm. 
+This Psychopy recreation keeps the logic explicit rather than attempting a binary-level
+translation. 
 
+The resource images and sounds are shared by Psychopy and EPrime versions, directly from:
 - `EPrimeFiles/CCS_EEG_ANGELv2_Level2_Template`
 - `EPrimeFiles/CCS_EEG_ANGELv2_Level3_Template`
 
