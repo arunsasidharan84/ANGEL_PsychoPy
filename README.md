@@ -2,7 +2,9 @@
 
 This repository contains a transparent PsychoPy recreation of the ANGEL E-Prime
 Level 2 and Level 3 paradigms using the local E-Prime resource folders.
+
 Ref: Nair AK, Sasidharan A, John JP, Mehrotra S and Kutty BM (2016) Assessing Neurocognition via Gamified Experimental Logic: A Novel Approach to Simultaneous Acquisition of Multiple ERPs. Front. Neurosci. 10:1. doi: 10.3389/fnins.2016.00001
+https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2016.00001/full
 
 The implementation is in `angel_paradigm.py`. It follows the ANGEL paper's core
 structure:
