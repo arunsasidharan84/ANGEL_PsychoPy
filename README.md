@@ -20,10 +20,13 @@ structure:
 - Continuous paired-tone offsets by default, using one standard/deviant sound
   file and programmatic onset timing. The E-Prime fixed offsets are still
   available.
-- Level 2 side responses with configurable immediate/delayed corollary tones.
+- Level 2 side responses with configurable immediate, delayed, and no-feedback
+  corollary discharge conditions.
+- Optional Level 3 corollary tones with the same CD schedule.
 - Level 3 meaningful/ambiguous responses with a midpoint rule reversal.
 - Optional EEG/event markers over LSL and/or parallel-port TTL.
-- Feedback after every two main blocks.
+- Feedback after every two main blocks, displayed together with score, mean RT,
+  progress, image, and audio.
 
 ## Running
 
@@ -52,7 +55,11 @@ Paper/E-Prime-style fixed paired-tone offsets and blockwise CD on/off:
 python angel_paradigm.py --participant S001 --paired-tone-offset-mode fixed --cd-schedule by-block
 ```
 
-Output CSV files are written to `data/`.
+Output CSV files are written to `data/` unless an output folder is chosen in the
+startup dialog or with `--output-dir`.
+
+Startup defaults are stored in `angel_config.json` beside the paradigm script.
+This file can be edited manually and shared across lab machines/users.
 
 ## Keys
 
@@ -88,19 +95,33 @@ reversal phase, response, RT, and accuracy.
   the 80/20 frequent/rare visual oddball proportion.
 - `--stim-duration`, `--response-window`, `--post-mask-min`,
   `--post-mask-max`: timing controls in seconds.
+- `--visual-distractor-mode sync|desync|none`: show visual distractor
+  checkerboards with the target, jittered from target onset, or never.
+- `--visual-distractor-offset-min` / `--visual-distractor-offset-max`: visual
+  distractor offset range in seconds for `desync` mode.
 - `--paired-tone-offset-mode continuous|fixed`: use programmatic continuous
   sound onset offsets, or the three E-Prime fixed-offset files.
 - `--paired-tone-offset-min` / `--paired-tone-offset-max`: continuous offset
   range in seconds relative to visual onset.
-- `--cd-schedule by-block|within-block|all-immediate|all-delayed`: Level 2 CD
-  schedule. `by-block` matches the paper; `within-block` randomizes CD on/off
-  trials inside every block.
+- `--cd-schedule by-block|within-block|all-immediate|all-delayed|all-none`:
+  Level 2 CD schedule. Trials are logged as `cd_condition=cd_immediate`,
+  `cd_condition=cd_delayed`, or `cd_condition=cd_none`. Except for the explicit
+  `all-none` test mode, `cd_none` is held at 20% of active trials in each block.
+  `by-block` assigns the feedback trials in a block to either immediate or
+  delayed CD; `within-block` randomizes immediate, delayed, and none trials
+  inside every block.
+- `--level3-cd` / `--no-level3-cd`: enable or disable corollary feedback in
+  Level 3.
+- `--cd-volume`, `--cd-repeats`, `--cd-repeat-gap`: tune corollary feedback
+  audibility. The bundled CD WAV is 200 ms long; repeated plays are automatically
+  spaced far enough apart to avoid overlap.
 - `--intermix-level-blocks`: shuffle Level 2 and Level 3 blocks into one
   combined sequence.
 - `--marker-mode none|lsl|parallel|both`: send markers. LSL uses
   `--lsl-stream-name`; TTL uses `--parallel-address` and `--ttl-pulse-width`.
+- `--output-dir`: custom CSV output folder.
 
 Each output row includes relative and global onset/offset columns for the trial,
 paired tone, visual target, response-window end, post-mask interval, corollary
-tone, and trial end. These columns are intended for timing audits and EEG event
-verification.
+tone, response, visual distractor, block name, and trial end. These columns are
+intended for timing audits and EEG event verification.

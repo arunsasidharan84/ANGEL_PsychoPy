@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import random
 import sys
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +22,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_EPRIME = ROOT / "EPrimeFiles"
+DEFAULT_CONFIG = ROOT / "angel_config.json"
 
 LEVEL_TEMPLATES = {
     "2": "CCS_EEG_ANGELv2_Level2_Template",
@@ -62,6 +65,42 @@ CATEGORY_SETS = {
 BLOCK_CHOICES = [16, 8, 4]
 TRIALS_PER_BLOCK_CHOICES = ["25+3", "20+3"]
 
+CONFIG_DEFAULTS = {
+    "levels": "2,3",
+    "language": "english",
+    "participant": "test",
+    "seed": None,
+    "practice": 8,
+    "blocks": 16,
+    "fullscreen": True,
+    "monitor": "testMonitor",
+    "resource_root": str(DEFAULT_EPRIME),
+    "skip_instructions": False,
+    "category_set": "all",
+    "paired_tone_offset_mode": "continuous",
+    "paired_tone_offset_min": -0.240,
+    "paired_tone_offset_max": 0.160,
+    "cd_schedule": "by-block",
+    "level3_cd": False,
+    "intermix_level_blocks": False,
+    "trials_per_block": "25+3",
+    "stim_duration": 0.240,
+    "response_window": 0.700,
+    "post_mask_min": 0.200,
+    "post_mask_max": 0.900,
+    "visual_distractor_mode": "sync",
+    "visual_distractor_offset_min": -0.240,
+    "visual_distractor_offset_max": 0.160,
+    "output_dir": None,
+    "marker_mode": "none",
+    "lsl_stream_name": "ANGELMarkers",
+    "parallel_address": "0x0378",
+    "ttl_pulse_width": 0.005,
+    "cd_volume": 0.7,
+    "cd_repeats": 1,
+    "cd_repeat_gap": 0.250,
+}
+
 KEYS = {
     "left": ["left", "z", "1"],
     "right": ["right", "slash", "2"],
@@ -90,59 +129,60 @@ class Trial:
 
 
 def parse_args() -> argparse.Namespace:
+    config_defaults = load_config_defaults()
     parser = argparse.ArgumentParser(
         description="Run the ANGEL Level 2/3 PsychoPy paradigm."
     )
     parser.add_argument(
         "--levels",
-        default="2,3",
+        default=config_defaults["levels"],
         help="Comma-separated levels to run: 2, 3, or 2,3. Default: 2,3.",
     )
     parser.add_argument(
         "--language",
-        default="english",
+        default=config_defaults["language"],
         choices=["english", "hindi", "kannada"],
         help="Instruction/resource language. Default: english.",
     )
     parser.add_argument(
         "--participant",
-        default="test",
+        default=config_defaults["participant"],
         help="Participant/session identifier used in the output filename.",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
+        default=config_defaults["seed"],
         help="Random seed for reproducible schedules. Default: system random.",
     )
     parser.add_argument(
         "--practice",
         type=int,
-        default=8,
+        default=config_defaults["practice"],
         help="Practice active trials per level before the main run. Default: 8.",
     )
     parser.add_argument(
         "--blocks",
         type=int,
         choices=BLOCK_CHOICES,
-        default=16,
+        default=config_defaults["blocks"],
         help="Blocks per level. Choices: 16, 8, or 4.",
     )
     parser.add_argument(
         "--fullscreen",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=config_defaults["fullscreen"],
         help="Run fullscreen. Default: true.",
     )
     parser.add_argument(
         "--monitor",
-        default="testMonitor",
+        default=config_defaults["monitor"],
         help="PsychoPy monitor name. Default: testMonitor.",
     )
     parser.add_argument(
         "--resource-root",
         type=Path,
-        default=DEFAULT_EPRIME,
+        default=Path(config_defaults["resource_root"]),
         help="Folder containing the EPrimeFiles templates.",
     )
     parser.add_argument(
@@ -152,90 +192,139 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--category-set",
-        default="all",
+        default=config_defaults["category_set"],
         choices=sorted(CATEGORY_SETS),
         help="Stimulus family to use: all, face, or shape. Face/shape-only runs work well with --blocks 8.",
     )
     parser.add_argument(
         "--paired-tone-offset-mode",
-        default="continuous",
+        default=config_defaults["paired_tone_offset_mode"],
         choices=["continuous", "fixed"],
         help="Use uniform continuous paired-tone offsets, or the paper/E-Prime fixed offsets. Default: continuous.",
     )
     parser.add_argument(
         "--paired-tone-offset-min",
         type=float,
-        default=-0.240,
+        default=config_defaults["paired_tone_offset_min"],
         help="Minimum continuous paired-tone offset in seconds relative to visual onset. Default: -0.240.",
     )
     parser.add_argument(
         "--paired-tone-offset-max",
         type=float,
-        default=0.160,
+        default=config_defaults["paired_tone_offset_max"],
         help="Maximum continuous paired-tone offset in seconds relative to visual onset. Default: 0.160.",
     )
     parser.add_argument(
         "--cd-schedule",
-        default="by-block",
-        choices=["by-block", "within-block", "all-immediate", "all-delayed"],
-        help="Level 2 corollary discharge schedule. Default matches the paper: by-block.",
+        default=config_defaults["cd_schedule"],
+        choices=["by-block", "within-block", "all-immediate", "all-delayed", "all-none"],
+        help="CD schedule: immediate, delayed, or none by block, within block, or forced to one mode.",
+    )
+    parser.add_argument(
+        "--level3-cd",
+        action=argparse.BooleanOptionalAction,
+        default=config_defaults["level3_cd"],
+        help="Enable corollary feedback in Level 3. Default from config.",
     )
     parser.add_argument(
         "--intermix-level-blocks",
         action="store_true",
+        default=config_defaults["intermix_level_blocks"],
         help="Shuffle Level 2 and Level 3 blocks together instead of running each level contiguously.",
     )
     parser.add_argument(
         "--trials-per-block",
-        default="25+3",
+        default=config_defaults["trials_per_block"],
         choices=TRIALS_PER_BLOCK_CHOICES,
         help="Active+baseline trials per block. Default: 25+3.",
     )
     parser.add_argument(
         "--stim-duration",
         type=float,
-        default=0.240,
+        default=config_defaults["stim_duration"],
         help="Visual target duration in seconds. Default: 0.240.",
     )
     parser.add_argument(
         "--response-window",
         type=float,
-        default=0.700,
+        default=config_defaults["response_window"],
         help="Response window from visual onset in seconds. Default: 0.700.",
     )
     parser.add_argument(
         "--post-mask-min",
         type=float,
-        default=0.200,
+        default=config_defaults["post_mask_min"],
         help="Minimum post-trial masked baseline in seconds. Default: 0.200.",
     )
     parser.add_argument(
         "--post-mask-max",
         type=float,
-        default=0.900,
+        default=config_defaults["post_mask_max"],
         help="Maximum post-trial masked baseline in seconds. Default: 0.900.",
     )
     parser.add_argument(
+        "--visual-distractor-mode",
+        default=config_defaults["visual_distractor_mode"],
+        choices=["sync", "desync", "none"],
+        help="Visual distractor timing: with target, jittered from target, or absent. Default: sync.",
+    )
+    parser.add_argument(
+        "--visual-distractor-offset-min",
+        type=float,
+        default=config_defaults["visual_distractor_offset_min"],
+        help="Minimum visual distractor offset in seconds for desync mode. Default: -0.240.",
+    )
+    parser.add_argument(
+        "--visual-distractor-offset-max",
+        type=float,
+        default=config_defaults["visual_distractor_offset_max"],
+        help="Maximum visual distractor offset in seconds for desync mode. Default: 0.160.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(config_defaults["output_dir"]).expanduser() if config_defaults["output_dir"] else None,
+        help="Folder for CSV logs. Default: data folder beside this script.",
+    )
+    parser.add_argument(
         "--marker-mode",
-        default="none",
+        default=config_defaults["marker_mode"],
         choices=["none", "lsl", "parallel", "both"],
         help="Send EEG/event markers over none, LSL, parallel TTL, or both.",
     )
     parser.add_argument(
         "--lsl-stream-name",
-        default="ANGELMarkers",
+        default=config_defaults["lsl_stream_name"],
         help="LSL marker stream name. Default: ANGELMarkers.",
     )
     parser.add_argument(
         "--parallel-address",
-        default="0x0378",
+        default=config_defaults["parallel_address"],
         help="Parallel port address for TTL markers. Default: 0x0378.",
     )
     parser.add_argument(
         "--ttl-pulse-width",
         type=float,
-        default=0.005,
+        default=config_defaults["ttl_pulse_width"],
         help="Parallel TTL pulse width before reset to zero, in seconds. Default: 0.005.",
+    )
+    parser.add_argument(
+        "--cd-volume",
+        type=float,
+        default=config_defaults["cd_volume"],
+        help="Corollary feedback sound volume. Default from config.",
+    )
+    parser.add_argument(
+        "--cd-repeats",
+        type=int,
+        default=config_defaults["cd_repeats"],
+        help="Number of times to play corollary feedback sound per event. Default from config.",
+    )
+    parser.add_argument(
+        "--cd-repeat-gap",
+        type=float,
+        default=config_defaults["cd_repeat_gap"],
+        help="Gap between repeated corollary sounds in seconds. Default from config.",
     )
     parser.add_argument(
         "--no-config-dialog",
@@ -268,18 +357,58 @@ EXPERIMENT_CLI_OPTIONS = {
     "--paired-tone-offset-min",
     "--paired-tone-offset-max",
     "--cd-schedule",
+    "--level3-cd",
+    "--no-level3-cd",
     "--intermix-level-blocks",
     "--trials-per-block",
     "--stim-duration",
     "--response-window",
     "--post-mask-min",
     "--post-mask-max",
+    "--visual-distractor-mode",
+    "--visual-distractor-offset-min",
+    "--visual-distractor-offset-max",
+    "--output-dir",
     "--marker-mode",
     "--lsl-stream-name",
     "--parallel-address",
     "--ttl-pulse-width",
+    "--cd-volume",
+    "--cd-repeats",
+    "--cd-repeat-gap",
     "--no-config-dialog",
 }
+
+
+def load_config_defaults() -> dict:
+    if not DEFAULT_CONFIG.exists():
+        save_config_defaults(CONFIG_DEFAULTS)
+        return dict(CONFIG_DEFAULTS)
+    try:
+        with DEFAULT_CONFIG.open("r", encoding="utf-8") as config_file:
+            loaded = json.load(config_file)
+    except Exception as exc:
+        print(f"WARNING: Could not read {DEFAULT_CONFIG}: {exc}", file=sys.stderr)
+        return dict(CONFIG_DEFAULTS)
+    config = dict(CONFIG_DEFAULTS)
+    config.update({key: value for key, value in loaded.items() if key in CONFIG_DEFAULTS})
+    return config
+
+
+def save_config_defaults(config: dict) -> None:
+    with DEFAULT_CONFIG.open("w", encoding="utf-8") as config_file:
+        json.dump(config, config_file, indent=2)
+        config_file.write("\n")
+
+
+def args_to_config(args: argparse.Namespace) -> dict:
+    config = {}
+    for key in CONFIG_DEFAULTS:
+        value = getattr(args, key, CONFIG_DEFAULTS[key])
+        if isinstance(value, Path):
+            value = str(value)
+        config[key] = value
+    return config
 
 
 def get_psychopy():
@@ -300,7 +429,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
     except Exception:
         return args
 
-    dialog_data = {
+    run_data = {
         "participant": args.participant,
         "levels": ["2,3", "2", "3"],
         "language": ["english", "hindi", "kannada"],
@@ -308,27 +437,16 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
         "blocks": [str(value) for value in BLOCK_CHOICES],
         "trials_per_block": TRIALS_PER_BLOCK_CHOICES,
         "practice": args.practice,
-        "stim_duration": args.stim_duration,
-        "response_window": args.response_window,
-        "post_mask_min": args.post_mask_min,
-        "post_mask_max": args.post_mask_max,
-        "paired_tone_offset_mode": ["continuous", "fixed"],
-        "paired_tone_offset_min": args.paired_tone_offset_min,
-        "paired_tone_offset_max": args.paired_tone_offset_max,
-        "cd_schedule": ["by-block", "within-block", "all-immediate", "all-delayed"],
-        "marker_mode": ["none", "lsl", "parallel", "both"],
-        "lsl_stream_name": args.lsl_stream_name,
-        "parallel_address": args.parallel_address,
-        "ttl_pulse_width": args.ttl_pulse_width,
         "intermix_level_blocks": args.intermix_level_blocks,
         "fullscreen": args.fullscreen,
         "skip_instructions": args.skip_instructions,
         "seed_blank_for_random": "" if args.seed is None else str(args.seed),
     }
-    dlg = gui.DlgFromDict(
-        dictionary=dialog_data,
-        title="ANGEL PsychoPy Configuration",
-        order=[
+    show_dialog_page(
+        gui,
+        run_data,
+        "ANGEL Config 1/3: Run",
+        [
             "participant",
             "levels",
             "language",
@@ -336,26 +454,77 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
             "blocks",
             "trials_per_block",
             "practice",
-            "stim_duration",
-            "response_window",
-            "post_mask_min",
-            "post_mask_max",
-            "paired_tone_offset_mode",
-            "paired_tone_offset_min",
-            "paired_tone_offset_max",
-            "cd_schedule",
-            "marker_mode",
-            "lsl_stream_name",
-            "parallel_address",
-            "ttl_pulse_width",
             "intermix_level_blocks",
             "fullscreen",
             "skip_instructions",
             "seed_blank_for_random",
         ],
     )
-    if not dlg.OK:
-        raise KeyboardInterrupt
+
+    timing_data = {
+        "stim_duration": args.stim_duration,
+        "response_window": args.response_window,
+        "post_mask_min": args.post_mask_min,
+        "post_mask_max": args.post_mask_max,
+        "visual_distractor_mode": ["sync", "desync", "none"],
+        "visual_distractor_offset_min": args.visual_distractor_offset_min,
+        "visual_distractor_offset_max": args.visual_distractor_offset_max,
+        "paired_tone_offset_mode": ["continuous", "fixed"],
+        "paired_tone_offset_min": args.paired_tone_offset_min,
+        "paired_tone_offset_max": args.paired_tone_offset_max,
+        "cd_schedule": ["by-block", "within-block", "all-immediate", "all-delayed", "all-none"],
+        "level3_cd": args.level3_cd,
+        "cd_volume": args.cd_volume,
+        "cd_repeats": args.cd_repeats,
+        "cd_repeat_gap": args.cd_repeat_gap,
+    }
+    show_dialog_page(
+        gui,
+        timing_data,
+        "ANGEL Config 2/3: Timing/CD",
+        [
+            "stim_duration",
+            "response_window",
+            "post_mask_min",
+            "post_mask_max",
+            "visual_distractor_mode",
+            "visual_distractor_offset_min",
+            "visual_distractor_offset_max",
+            "paired_tone_offset_mode",
+            "paired_tone_offset_min",
+            "paired_tone_offset_max",
+            "cd_schedule",
+            "level3_cd",
+            "cd_volume",
+            "cd_repeats",
+            "cd_repeat_gap",
+        ],
+    )
+
+    io_data = {
+        "marker_mode": ["none", "lsl", "parallel", "both"],
+        "lsl_stream_name": args.lsl_stream_name,
+        "parallel_address": args.parallel_address,
+        "ttl_pulse_width": args.ttl_pulse_width,
+        "output_dir_blank_for_default": "" if args.output_dir is None else str(args.output_dir),
+    }
+    show_dialog_page(
+        gui,
+        io_data,
+        "ANGEL Config 3/3: Output",
+        [
+            "marker_mode",
+            "lsl_stream_name",
+            "parallel_address",
+            "ttl_pulse_width",
+            "output_dir_blank_for_default",
+        ],
+    )
+
+    dialog_data = {}
+    dialog_data.update(run_data)
+    dialog_data.update(timing_data)
+    dialog_data.update(io_data)
 
     args.participant = str(dialog_data["participant"])
     args.levels = str(dialog_data["levels"])
@@ -368,20 +537,39 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
     args.response_window = float(dialog_data["response_window"])
     args.post_mask_min = float(dialog_data["post_mask_min"])
     args.post_mask_max = float(dialog_data["post_mask_max"])
+    args.visual_distractor_mode = str(dialog_data["visual_distractor_mode"])
+    args.visual_distractor_offset_min = float(dialog_data["visual_distractor_offset_min"])
+    args.visual_distractor_offset_max = float(dialog_data["visual_distractor_offset_max"])
     args.paired_tone_offset_mode = str(dialog_data["paired_tone_offset_mode"])
     args.paired_tone_offset_min = float(dialog_data["paired_tone_offset_min"])
     args.paired_tone_offset_max = float(dialog_data["paired_tone_offset_max"])
     args.cd_schedule = str(dialog_data["cd_schedule"])
+    args.level3_cd = bool(dialog_data["level3_cd"])
+    args.cd_volume = float(dialog_data["cd_volume"])
+    args.cd_repeats = int(dialog_data["cd_repeats"])
+    args.cd_repeat_gap = float(dialog_data["cd_repeat_gap"])
     args.marker_mode = str(dialog_data["marker_mode"])
     args.lsl_stream_name = str(dialog_data["lsl_stream_name"])
     args.parallel_address = str(dialog_data["parallel_address"])
     args.ttl_pulse_width = float(dialog_data["ttl_pulse_width"])
+    output_dir = str(dialog_data["output_dir_blank_for_default"]).strip()
+    args.output_dir = Path(output_dir).expanduser() if output_dir else None
     args.intermix_level_blocks = bool(dialog_data["intermix_level_blocks"])
     args.fullscreen = bool(dialog_data["fullscreen"])
     args.skip_instructions = bool(dialog_data["skip_instructions"])
     seed_value = str(dialog_data["seed_blank_for_random"]).strip()
     args.seed = int(seed_value) if seed_value else None
     return args
+
+
+def show_dialog_page(gui, data: dict, title: str, order: list[str]) -> None:
+    dlg = gui.DlgFromDict(
+        dictionary=data,
+        title=title,
+        order=order,
+    )
+    if not dlg.OK:
+        raise KeyboardInterrupt
 
 
 def flatten(items: Iterable[Iterable[str]]) -> list[str]:
@@ -398,10 +586,18 @@ def validate_config(args: argparse.Namespace) -> None:
         raise SystemExit("--paired-tone-offset-min must be <= --paired-tone-offset-max.")
     if args.post_mask_min > args.post_mask_max:
         raise SystemExit("--post-mask-min must be <= --post-mask-max.")
+    if args.visual_distractor_offset_min > args.visual_distractor_offset_max:
+        raise SystemExit("--visual-distractor-offset-min must be <= --visual-distractor-offset-max.")
     if args.stim_duration <= 0 or args.response_window <= 0:
         raise SystemExit("--stim-duration and --response-window must be positive.")
     if args.stim_duration < max(0.0, args.paired_tone_offset_max):
         raise SystemExit("--stim-duration must be >= positive paired-tone offset maximum.")
+    if args.visual_distractor_mode == "desync" and args.stim_duration < max(0.0, args.visual_distractor_offset_max):
+        raise SystemExit("--stim-duration must be >= positive visual distractor offset maximum.")
+    if args.cd_repeats < 1:
+        raise SystemExit("--cd-repeats must be >= 1.")
+    if args.cd_repeat_gap < 0:
+        raise SystemExit("--cd-repeat-gap must be >= 0.")
     balance_unit = len(CATEGORY_SETS[args.category_set]) * 2
     if args.blocks % balance_unit != 0:
         raise SystemExit(
@@ -476,6 +672,7 @@ def generate_level_trials(
     cd_schedule: str = "by-block",
     active_trials_per_block: int = 25,
     baseline_trials_per_block: int = 3,
+    level3_cd: bool = False,
 ) -> list[Trial]:
     categories = CATEGORY_SETS[category_set]
     block_specs: list[tuple[str, str]] = []
@@ -539,7 +736,7 @@ def generate_level_trials(
                 correct_response = side_to_key(target_side)
                 corollary_mode = block_cd_modes[trial_index - 1]
             else:
-                corollary_mode = None
+                corollary_mode = block_cd_modes[trial_index - 1] if level3_cd else None
                 reversal_phase = "pre_reversal" if block_index <= blocks // 2 else "post_reversal"
                 meaning = CATEGORIES[stimulus_category]["meaning"]
                 if reversal_phase == "pre_reversal":
@@ -598,17 +795,32 @@ def make_cd_modes(
     active_trials_per_block: int,
     rng: random.Random,
 ) -> list[str]:
+    none_count = max(1, round(active_trials_per_block * 0.20))
+    feedback_count = active_trials_per_block - none_count
     if cd_schedule == "all-immediate":
-        return ["immediate"] * active_trials_per_block
-    if cd_schedule == "all-delayed":
-        return ["delayed"] * active_trials_per_block
-    if cd_schedule == "within-block":
-        immediate_count = (active_trials_per_block + 1) // 2
-        modes = ["immediate"] * immediate_count
-        modes.extend("delayed" for _ in range(active_trials_per_block - immediate_count))
+        modes = ["immediate"] * feedback_count + ["none"] * none_count
         rng.shuffle(modes)
         return modes
-    return ["immediate" if block_index in immediate_blocks else "delayed"] * active_trials_per_block
+    if cd_schedule == "all-delayed":
+        modes = ["delayed"] * feedback_count + ["none"] * none_count
+        rng.shuffle(modes)
+        return modes
+    if cd_schedule == "all-none":
+        return ["none"] * active_trials_per_block
+    if cd_schedule == "within-block":
+        immediate_count = (feedback_count + 1) // 2
+        delayed_count = feedback_count - immediate_count
+        modes = (
+            ["immediate"] * immediate_count
+            + ["delayed"] * delayed_count
+            + ["none"] * none_count
+        )
+        rng.shuffle(modes)
+        return modes
+    feedback_mode = "immediate" if block_index in immediate_blocks else "delayed"
+    modes = [feedback_mode] * feedback_count + ["none"] * none_count
+    rng.shuffle(modes)
+    return modes
 
 
 def sample_paired_tone_offset(
@@ -654,6 +866,7 @@ def generate_practice(
             args.cd_schedule,
             active_trials,
             baseline_trials,
+            args.level3_cd,
         )
         if trial.trial_type == "active"
     ]
@@ -697,6 +910,33 @@ def show_image_slide(win, event, visual, sound, image_path: Path, audio_path: Pa
         audio.stop()
 
 
+def show_transition_text(win, event, visual, message: str) -> None:
+    stim = visual.TextStim(
+        win,
+        text=f"{message}\n\nPress space to continue",
+        color="white",
+        height=0.04,
+        units="height",
+        wrapWidth=1.5,
+    )
+    stim.draw()
+    win.flip()
+    wait_for_continue(event)
+
+
+def show_level_instruction(win, event, visual, sound, assets: dict, level: str, phase: str) -> None:
+    message = f"Level {level}"
+    show_transition_text(win, event, visual, message)
+    show_image_slide(
+        win,
+        event,
+        visual,
+        sound,
+        assets["language"] / "InstructionLevel1.PNG",
+        assets["language"] / "InstructionLevel1.mp3",
+    )
+
+
 def existing_case_variant(path: Path) -> Path:
     if path.exists():
         return path
@@ -724,16 +964,92 @@ def make_stimuli(win, visual, assets: dict) -> dict:
     }
 
 
-def draw_masks(win, stimuli: dict, distractor_pos: str | None = None) -> None:
+def make_audio_cache(sound, assets: dict) -> dict:
+    cache = {
+        "corollary": sound.Sound(str(assets["corollary"])),
+        "nocorollary": sound.Sound(str(assets["nocorollary"])),
+    }
+    return cache
+
+
+def set_sound_volume(sound_obj, volume: float) -> None:
+    try:
+        sound_obj.setVolume(volume)
+    except Exception:
+        try:
+            sound_obj.volume = volume
+        except Exception:
+            pass
+
+
+def get_sound_duration(sound_obj, fallback: float = 0.200) -> float:
+    for attr in ("getDuration", "duration", "secs"):
+        try:
+            value = getattr(sound_obj, attr)
+            duration = value() if callable(value) else value
+            if duration is not None and float(duration) > 0:
+                return float(duration)
+        except Exception:
+            continue
+    return fallback
+
+
+def play_cd_feedback(
+    audio_cache: dict,
+    name: str,
+    args: argparse.Namespace,
+    trial_clock=None,
+    scheduled_sounds: list | None = None,
+) -> None:
+    sound_obj = audio_cache[name]
+    set_sound_volume(sound_obj, args.cd_volume)
+    sound_obj.play()
+    repeat_gap = max(args.cd_repeat_gap, get_sound_duration(sound_obj) + 0.020)
+    for repeat_index in range(1, args.cd_repeats):
+        if trial_clock is not None and scheduled_sounds is not None:
+            scheduled_sounds.append((trial_clock.getTime() + repeat_index * repeat_gap, sound_obj))
+        else:
+            threading.Timer(repeat_index * repeat_gap, sound_obj.play).start()
+
+
+def cd_condition_from_mode(corollary_mode: str | None) -> str | None:
+    if corollary_mode == "immediate":
+        return "cd_immediate"
+    if corollary_mode == "delayed":
+        return "cd_delayed"
+    if corollary_mode == "none":
+        return "cd_none"
+    return None
+
+
+def service_scheduled_sounds(trial_clock, scheduled_sounds: list) -> None:
+    now = trial_clock.getTime()
+    pending = []
+    for play_time, sound_obj in scheduled_sounds:
+        if now >= play_time:
+            sound_obj.play()
+        else:
+            pending.append((play_time, sound_obj))
+    scheduled_sounds[:] = pending
+
+
+def draw_masks(win, stimuli: dict, distractor_pos: str | None = None, show_distractor: bool = False) -> None:
     stimuli["left_mask"].draw()
     stimuli["right_mask"].draw()
     stimuli["fix"].draw()
+    if not show_distractor:
+        return
     if distractor_pos == "top":
         stimuli["top_left_distractor"].draw()
         stimuli["top_right_distractor"].draw()
     elif distractor_pos == "bottom":
         stimuli["bottom_left_distractor"].draw()
         stimuli["bottom_right_distractor"].draw()
+
+
+def draw_trial_frame(stimuli: dict, target, distractor_pos: str | None, show_distractor: bool) -> None:
+    draw_masks(None, stimuli, distractor_pos, show_distractor)
+    target.draw()
 
 
 def play_sound_at(core, sound_obj, trial_clock, absolute_s: float) -> float:
@@ -743,8 +1059,10 @@ def play_sound_at(core, sound_obj, trial_clock, absolute_s: float) -> float:
     return trial_clock.getTime()
 
 
-def wait_until(core, trial_clock, absolute_s: float) -> None:
+def wait_until(core, trial_clock, absolute_s: float, scheduled_sounds: list | None = None) -> None:
     while trial_clock.getTime() < absolute_s:
+        if scheduled_sounds is not None:
+            service_scheduled_sounds(trial_clock, scheduled_sounds)
         core.wait(0.001, hogCPUperiod=0.001)
 
 
@@ -763,6 +1081,7 @@ class MarkerSender:
         "response_miss": 42,
         "cd_immediate": 50,
         "cd_delayed": 51,
+        "cd_none": 52,
         "trial_end": 90,
     }
 
@@ -806,7 +1125,10 @@ class MarkerSender:
         if self.port is not None:
             try:
                 self.port.setData(marker_code)
-                self.core.callLater(self.args.ttl_pulse_width, self.port.setData, 0)
+                if hasattr(self.core, "callLater"):
+                    self.core.callLater(self.args.ttl_pulse_width, self.port.setData, 0)
+                else:
+                    threading.Timer(self.args.ttl_pulse_width, self.port.setData, args=(0,)).start()
             except Exception as exc:
                 print(f"WARNING: Parallel marker failed: {exc}", file=sys.stderr)
 
@@ -823,15 +1145,18 @@ def run_trial(
     sound,
     stimuli: dict,
     assets: dict,
+    audio_cache: dict,
     rng: random.Random,
     trial_global_index: int,
     exp_clock,
     markers: MarkerSender,
+    block_name: str,
 ) -> dict:
     event.clearEvents()
     response_keys = flatten([KEYS["left"], KEYS["right"], KEYS["quit"]])
     trial_clock = core.Clock()
     response = None
+    response_onset_global = None
     rt = None
     accuracy = None
     paired_tone_onset = None
@@ -849,6 +1174,8 @@ def run_trial(
     post_mask_start_global = None
     post_mask_end = None
     post_mask_end_global = None
+    cd_none_marker_sent = False
+    scheduled_sounds: list = []
     trial_start_global = exp_clock.getTime()
     markers.send("trial_start")
 
@@ -873,6 +1200,7 @@ def run_trial(
             baseline_onset_global=baseline_onset,
             post_mask_duration=baseline_duration,
             trial_end_global=trial_end_global,
+            block_name=block_name,
         )
 
     target_path = rng.choice(assets["categories"][trial.stimulus_category])
@@ -884,6 +1212,16 @@ def run_trial(
         size=stimuli["target_size"],
         units="height",
     )
+    visual_distractor_offset = None
+    visual_distractor_onset = None
+    visual_distractor_onset_global = None
+    visual_distractor_offset_time = None
+    visual_distractor_offset_global = None
+    if args.visual_distractor_mode == "desync":
+        visual_distractor_offset = rng.uniform(
+            args.visual_distractor_offset_min,
+            args.visual_distractor_offset_max,
+        )
 
     tone = None
     tone_start_s = None
@@ -897,7 +1235,18 @@ def run_trial(
         pre_stim_s = max(0.240, -args.paired_tone_offset_min)
 
     # Pre-stimulus mask gives room for negative paired-tone offsets.
-    draw_masks(win, stimuli, trial.visual_distractor_pos)
+    distractor_start_s = (
+        pre_stim_s + visual_distractor_offset
+        if args.visual_distractor_mode == "desync" and visual_distractor_offset is not None
+        else None
+    )
+    distractor_end_s = (
+        distractor_start_s + args.stim_duration
+        if distractor_start_s is not None
+        else None
+    )
+    distractor_visible = False
+    draw_masks(win, stimuli, trial.visual_distractor_pos, False)
     win.flip()
     trial_clock.reset()
 
@@ -908,16 +1257,43 @@ def run_trial(
     tone_pending = tone is not None and tone_start_s is not None and tone_start_s >= pre_stim_s
 
     while trial_clock.getTime() < pre_stim_s:
+        service_scheduled_sounds(trial_clock, scheduled_sounds)
+        if distractor_start_s is not None and distractor_end_s is not None:
+            should_show = distractor_start_s <= trial_clock.getTime() < distractor_end_s
+            if should_show != distractor_visible:
+                draw_masks(win, stimuli, trial.visual_distractor_pos, should_show)
+                win.flip()
+                distractor_visible = should_show
+                if should_show:
+                    visual_distractor_onset = trial_clock.getTime()
+                    visual_distractor_onset_global = exp_clock.getTime()
+                elif visual_distractor_offset_time is None:
+                    visual_distractor_offset_time = trial_clock.getTime()
+                    visual_distractor_offset_global = exp_clock.getTime()
         core.wait(0.001, hogCPUperiod=0.001)
 
-    draw_masks(win, stimuli, trial.visual_distractor_pos)
-    target.draw()
+    show_sync_distractor = args.visual_distractor_mode == "sync"
+    show_desync_at_visual = (
+        args.visual_distractor_mode == "desync"
+        and distractor_start_s is not None
+        and distractor_end_s is not None
+        and distractor_start_s <= pre_stim_s < distractor_end_s
+    )
+    draw_trial_frame(stimuli, target, trial.visual_distractor_pos, show_sync_distractor or show_desync_at_visual)
     win.flip()
+    distractor_visible = show_sync_distractor or show_desync_at_visual
     visual_onset = trial_clock.getTime()
     visual_onset_global = exp_clock.getTime()
     markers.send(f"visual_{trial.frequency_class}")
+    if show_sync_distractor:
+        visual_distractor_onset = visual_onset
+        visual_distractor_onset_global = visual_onset_global
+    elif show_desync_at_visual and visual_distractor_onset is None:
+        visual_distractor_onset = visual_onset + float(visual_distractor_offset)
+        visual_distractor_onset_global = exp_clock.getTime()
 
     while trial_clock.getTime() < visual_onset + args.stim_duration:
+        service_scheduled_sounds(trial_clock, scheduled_sounds)
         if tone_pending and trial_clock.getTime() >= tone_start_s:
             tone.play()
             paired_tone_onset = trial_clock.getTime()
@@ -930,22 +1306,59 @@ def run_trial(
         if keys and response is None:
             response, timestamp = normalize_response(keys[0])
             rt = timestamp - visual_onset
+            response_onset_global = exp_clock.getTime()
             markers.send(f"response_{response}")
-            if trial.level == "2" and trial.corollary_mode == "immediate":
-                sound.Sound(str(assets["corollary"])).play()
+            if trial.corollary_mode == "immediate":
+                play_cd_feedback(audio_cache, "corollary", args, trial_clock, scheduled_sounds)
                 corollary_onset = trial_clock.getTime()
                 corollary_onset_global = exp_clock.getTime()
                 markers.send("cd_immediate")
+            elif trial.corollary_mode == "none":
+                markers.send("cd_none")
+                cd_none_marker_sent = True
+        if args.visual_distractor_mode == "desync" and distractor_start_s is not None and distractor_end_s is not None:
+            should_show = (
+                distractor_start_s <= trial_clock.getTime() < distractor_end_s
+            )
+            if should_show and visual_distractor_onset is None:
+                visual_distractor_onset = trial_clock.getTime()
+                visual_distractor_onset_global = exp_clock.getTime()
+            if not should_show and visual_distractor_onset is not None and visual_distractor_offset_time is None:
+                visual_distractor_offset_time = trial_clock.getTime()
+                visual_distractor_offset_global = exp_clock.getTime()
+            if should_show != distractor_visible:
+                draw_trial_frame(stimuli, target, trial.visual_distractor_pos, should_show)
+                win.flip()
+                distractor_visible = should_show
         core.wait(0.001, hogCPUperiod=0.001)
 
-    draw_masks(win, stimuli, trial.visual_distractor_pos)
+    draw_masks(win, stimuli, trial.visual_distractor_pos, False)
     win.flip()
     visual_offset = trial_clock.getTime()
     visual_offset_global = exp_clock.getTime()
     markers.send("visual_offset")
+    if args.visual_distractor_mode == "sync":
+        visual_distractor_offset_time = visual_offset
+        visual_distractor_offset_global = visual_offset_global
+    elif args.visual_distractor_mode == "desync" and visual_distractor_onset is not None and visual_distractor_offset_time is None:
+        visual_distractor_offset_time = visual_offset
+        visual_distractor_offset_global = visual_offset_global
 
     response_deadline = visual_onset + args.response_window
     while trial_clock.getTime() < response_deadline:
+        service_scheduled_sounds(trial_clock, scheduled_sounds)
+        if args.visual_distractor_mode == "desync" and distractor_start_s is not None and distractor_end_s is not None:
+            should_show = distractor_start_s <= trial_clock.getTime() < distractor_end_s
+            if should_show and visual_distractor_onset is None:
+                visual_distractor_onset = trial_clock.getTime()
+                visual_distractor_onset_global = exp_clock.getTime()
+            if should_show != distractor_visible:
+                draw_masks(win, stimuli, trial.visual_distractor_pos, should_show)
+                win.flip()
+                distractor_visible = should_show
+            if not should_show and visual_distractor_onset is not None and visual_distractor_offset_time is None:
+                visual_distractor_offset_time = trial_clock.getTime()
+                visual_distractor_offset_global = exp_clock.getTime()
         if tone_pending and trial_clock.getTime() >= tone_start_s:
             tone.play()
             paired_tone_onset = trial_clock.getTime()
@@ -958,12 +1371,16 @@ def run_trial(
         if keys and response is None:
             response, timestamp = normalize_response(keys[0])
             rt = timestamp - visual_onset
+            response_onset_global = exp_clock.getTime()
             markers.send(f"response_{response}")
-            if trial.level == "2" and trial.corollary_mode == "immediate":
-                sound.Sound(str(assets["corollary"])).play()
+            if trial.corollary_mode == "immediate":
+                play_cd_feedback(audio_cache, "corollary", args, trial_clock, scheduled_sounds)
                 corollary_onset = trial_clock.getTime()
                 corollary_onset_global = exp_clock.getTime()
                 markers.send("cd_immediate")
+            elif trial.corollary_mode == "none":
+                markers.send("cd_none")
+                cd_none_marker_sent = True
         core.wait(0.001, hogCPUperiod=0.001)
 
     response_window_end = trial_clock.getTime()
@@ -975,12 +1392,18 @@ def run_trial(
 
     if response is None:
         markers.send("response_miss")
+        if trial.corollary_mode == "none" and not cd_none_marker_sent:
+            markers.send("cd_none")
+            cd_none_marker_sent = True
 
-    if trial.level == "2" and trial.corollary_mode == "delayed":
-        max_delay = max(0.0, min(0.350, post_mask_duration - 0.005))
-        delay = rng.uniform(0.050, max_delay) if max_delay >= 0.050 else max_delay
-        play_at = post_mask_start + delay
-        corollary_onset = play_sound_at(core, sound.Sound(str(assets["nocorollary"])), trial_clock, play_at)
+    if trial.corollary_mode == "delayed":
+        cd_anchor = visual_onset + rt if rt is not None else response_deadline
+        delay = rng.uniform(0.300, 0.500)
+        play_at = cd_anchor + delay
+        post_mask_end = max(post_mask_end, play_at + 0.005)
+        wait_until(core, trial_clock, play_at, scheduled_sounds)
+        play_cd_feedback(audio_cache, "corollary", args, trial_clock, scheduled_sounds)
+        corollary_onset = trial_clock.getTime()
         corollary_onset_global = exp_clock.getTime()
         markers.send("cd_delayed")
 
@@ -988,7 +1411,7 @@ def run_trial(
     if trial.correct_response:
         accuracy = int(response == trial.correct_response)
 
-    wait_until(core, trial_clock, post_mask_end)
+    wait_until(core, trial_clock, post_mask_end, scheduled_sounds)
     post_mask_end_global = exp_clock.getTime()
     markers.send("trial_end")
 
@@ -1003,6 +1426,7 @@ def run_trial(
         corollary_onset,
         paired_tone_file,
         visual_onset,
+        response_onset_global=response_onset_global,
         trial_start_global=trial_start_global,
         paired_tone_onset_global=paired_tone_onset_global,
         visual_onset_global=visual_onset_global,
@@ -1017,6 +1441,12 @@ def run_trial(
         post_mask_end_global=post_mask_end_global,
         corollary_onset_global=corollary_onset_global,
         trial_end_global=post_mask_end_global,
+        visual_distractor_offset=visual_distractor_offset,
+        visual_distractor_onset=visual_distractor_onset,
+        visual_distractor_onset_global=visual_distractor_onset_global,
+        visual_distractor_offset_time=visual_distractor_offset_time,
+        visual_distractor_offset_global=visual_distractor_offset_global,
+        block_name=block_name,
     )
 
 
@@ -1051,6 +1481,7 @@ def row_from_trial(
     corollary_onset: float | None = None,
     paired_tone_file: str | None = None,
     visual_onset: float | None = None,
+    response_onset_global: float | None = None,
     trial_start_global: float | None = None,
     baseline_onset_global: float | None = None,
     paired_tone_onset_global: float | None = None,
@@ -1066,11 +1497,18 @@ def row_from_trial(
     post_mask_end_global: float | None = None,
     corollary_onset_global: float | None = None,
     trial_end_global: float | None = None,
+    visual_distractor_offset: float | None = None,
+    visual_distractor_onset: float | None = None,
+    visual_distractor_onset_global: float | None = None,
+    visual_distractor_offset_time: float | None = None,
+    visual_distractor_offset_global: float | None = None,
+    block_name: str | None = None,
 ) -> dict:
     return {
         "trial_global_index": trial_global_index,
         "level": trial.level,
         "block": trial.block,
+        "block_name": block_name,
         "trial_in_block": trial.trial_in_block,
         "trial_type": trial.trial_type,
         "standard_category": trial.standard_category,
@@ -1082,6 +1520,11 @@ def row_from_trial(
         "omitted_category": trial.omitted_category,
         "target_side": trial.target_side,
         "visual_distractor_pos": trial.visual_distractor_pos,
+        "visual_distractor_offset_s": visual_distractor_offset,
+        "visual_distractor_onset_s": visual_distractor_onset,
+        "visual_distractor_onset_global_s": visual_distractor_onset_global,
+        "visual_distractor_offset_time_s": visual_distractor_offset_time,
+        "visual_distractor_offset_global_s": visual_distractor_offset_global,
         "auditory_class": trial.auditory_class,
         "auditory_offset_s": trial.auditory_offset_s,
         "paired_tone_file": paired_tone_file,
@@ -1100,11 +1543,28 @@ def row_from_trial(
         "post_mask_end_s": post_mask_end,
         "post_mask_end_global_s": post_mask_end_global,
         "corollary_mode": trial.corollary_mode,
+        "cd_condition": cd_condition_from_mode(trial.corollary_mode),
+        "cd_feedback_onset_s": corollary_onset,
+        "cd_feedback_onset_global_s": corollary_onset_global,
         "corollary_onset_s": corollary_onset,
         "corollary_onset_global_s": corollary_onset_global,
+        "cd_feedback_delay_from_response_s": (
+            corollary_onset - (visual_onset + rt)
+            if corollary_onset is not None and visual_onset is not None and rt is not None
+            else None
+        ),
+        "corollary_delay_from_response_s": (
+            corollary_onset - (visual_onset + rt)
+            if trial.corollary_mode == "immediate"
+            and corollary_onset is not None
+            and visual_onset is not None
+            and rt is not None
+            else None
+        ),
         "reversal_phase": trial.reversal_phase,
         "correct_response": trial.correct_response,
         "response": response,
+        "response_onset_global_s": response_onset_global,
         "rt_s": rt,
         "accuracy": accuracy,
         "trial_start_global_s": trial_start_global,
@@ -1117,7 +1577,16 @@ def row_from_trial(
     }
 
 
-def show_feedback(win, event, visual, sound, language_dir: Path, recent_rows: list[dict]) -> None:
+def show_feedback(
+    win,
+    event,
+    visual,
+    sound,
+    language_dir: Path,
+    recent_rows: list[dict],
+    completed_trials: int,
+    total_trials: int,
+) -> None:
     active = [row for row in recent_rows if row["trial_type"] == "active" and row["accuracy"] is not None]
     if not active:
         return
@@ -1132,27 +1601,28 @@ def show_feedback(win, event, visual, sound, language_dir: Path, recent_rows: li
     else:
         feedback = "FeedbackOutstanding"
 
-    show_image_slide(
-        win,
-        event,
-        visual,
-        sound,
-        language_dir / f"{feedback}.PNG",
-        language_dir / f"{feedback}.mp3",
-    )
-
     text = f"Accuracy: {accuracy * 100:.1f}%"
     if mean_rt is not None:
         text += f"\nMean RT: {mean_rt * 1000:.0f} ms"
-    stim = visual.TextStim(win, text=text, color="white", height=0.035, units="height")
+    progress = 100 * completed_trials / total_trials if total_trials else 0
+    text += f"\nTask completed: {progress:.1f}%"
+
+    image_path = existing_case_variant(language_dir / f"{feedback}.PNG")
+    audio_path = existing_case_variant(language_dir / f"{feedback}.mp3")
+    if audio_path.exists():
+        audio = sound.Sound(str(audio_path))
+        audio.play()
+    else:
+        audio = None
+    if image_path.exists():
+        image = visual.ImageStim(win, image=str(image_path), pos=(0, 0.14), size=(1.05, 0.78), units="height")
+        image.draw()
+    stim = visual.TextStim(win, text=text, pos=(0, -0.34), color="white", height=0.035, units="height")
     stim.draw()
     win.flip()
-    core_wait = 1.5
-    try:
-        from psychopy import core  # type: ignore
-        core.wait(core_wait)
-    except Exception:
-        pass
+    wait_for_continue(event)
+    if audio:
+        audio.stop()
 
 
 def run_level(
@@ -1173,27 +1643,28 @@ def run_level(
     template_dir = args.resource_root / LEVEL_TEMPLATES[level]
     assets = load_assets(template_dir, args.language)
     stimuli = make_stimuli(win, visual, assets)
+    audio_cache = make_audio_cache(sound, assets)
     active_trials, baseline_trials = parse_trials_per_block(args.trials_per_block)
     block_trial_count = active_trials + baseline_trials
+    total_main_trials = args.blocks * block_trial_count
 
     if not args.skip_instructions:
         show_image_slide(win, event, visual, sound, assets["language"] / "WelcomeLevel1.PNG", assets["language"] / "WelcomeLevel1.mp3")
-        show_image_slide(win, event, visual, sound, assets["language"] / "InstructionLevel1.PNG", assets["language"] / "InstructionLevel1.mp3")
-        show_image_slide(win, event, visual, sound, assets["language"] / "PracticeStart.PNG", assets["language"] / "PracticeStart.mp3")
+        show_level_instruction(win, event, visual, sound, assets, level, "main")
+        show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
 
     for trial in generate_practice(level, args.practice, rng, args):
         trial_counter += 1
-        row = run_trial(trial, args, win, core, event, visual, sound, stimuli, assets, rng, trial_counter, exp_clock, markers)
+        row = run_trial(
+            trial, args, win, core, event, visual, sound, stimuli, assets, audio_cache,
+            rng, trial_counter, exp_clock, markers, f"practice_level{level}"
+        )
         row["phase"] = "practice"
         writer.writerow(row)
         output_file.flush()
 
-    if args.practice and not args.skip_instructions:
-        show_image_slide(win, event, visual, sound, assets["language"] / "PracticeEnd.PNG", assets["language"] / "PracticeEnd.mp3")
-    if not args.skip_instructions:
-        show_image_slide(win, event, visual, sound, assets["language"] / "ExperimentStart.PNG", assets["language"] / "ExperimentStart.mp3")
-
     block_rows: list[dict] = []
+    ready_pending = False
     for trial in generate_level_trials(
         level,
         args.blocks,
@@ -1205,20 +1676,33 @@ def run_level(
         args.cd_schedule,
         active_trials,
         baseline_trials,
+        args.level3_cd,
     ):
         if trial.trial_in_block == 1:
             markers.send("block_start")
-            show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
+            if ready_pending:
+                show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
+                ready_pending = False
 
         trial_counter += 1
-        row = run_trial(trial, args, win, core, event, visual, sound, stimuli, assets, rng, trial_counter, exp_clock, markers)
+        block_name = f"level{level}_block{trial.block:02d}"
+        row = run_trial(
+            trial, args, win, core, event, visual, sound, stimuli, assets, audio_cache,
+            rng, trial_counter, exp_clock, markers, block_name
+        )
         row["phase"] = "main"
         writer.writerow(row)
         output_file.flush()
         block_rows.append(row)
 
         if trial.trial_in_block == block_trial_count and trial.block % 2 == 0:
-            show_feedback(win, event, visual, sound, assets["language"], block_rows[-2 * block_trial_count:])
+            show_feedback(
+                win, event, visual, sound, assets["language"],
+                block_rows[-2 * block_trial_count:],
+                len(block_rows),
+                total_main_trials,
+            )
+            ready_pending = True
 
         if level == "3" and trial.block == args.blocks // 2 and trial.trial_in_block == block_trial_count:
             reversal = visual.TextStim(
@@ -1231,6 +1715,7 @@ def run_level(
             reversal.draw()
             win.flip()
             wait_for_continue(event)
+            ready_pending = True
 
     if not args.skip_instructions:
         show_image_slide(win, event, visual, sound, assets["language"] / "ExperimentEnd.PNG", assets["language"] / "ExperimentEnd.mp3")
@@ -1261,17 +1746,33 @@ def run_intermixed_levels(
         level: make_stimuli(win, visual, assets_by_level[level])
         for level in levels
     }
+    audio_by_level = {
+        level: make_audio_cache(sound, assets_by_level[level])
+        for level in levels
+    }
     active_trials, baseline_trials = parse_trials_per_block(args.trials_per_block)
     block_trial_count = active_trials + baseline_trials
+    total_main_trials = len(levels) * args.blocks * block_trial_count
 
-    if not args.skip_instructions:
-        for level in levels:
-            assets = assets_by_level[level]
-            show_image_slide(win, event, visual, sound, assets["language"] / "WelcomeLevel1.PNG", assets["language"] / "WelcomeLevel1.mp3")
-            show_image_slide(win, event, visual, sound, assets["language"] / "InstructionLevel1.PNG", assets["language"] / "InstructionLevel1.mp3")
-
+    welcome_shown = False
+    practice_instruction_level = None
     for level in levels:
-        for trial in generate_practice(level, args.practice, rng, args):
+        practice_trials = generate_practice(level, args.practice, rng, args)
+        if practice_trials and not args.skip_instructions and level != practice_instruction_level:
+            if not welcome_shown:
+                show_image_slide(
+                    win,
+                    event,
+                    visual,
+                    sound,
+                    assets_by_level[level]["language"] / "WelcomeLevel1.PNG",
+                    assets_by_level[level]["language"] / "WelcomeLevel1.mp3",
+                )
+                welcome_shown = True
+            show_level_instruction(win, event, visual, sound, assets_by_level[level], level, "practice")
+            show_image_slide(win, event, visual, sound, assets_by_level[level]["language"] / "Ready.PNG", assets_by_level[level]["language"] / "Ready.mp3")
+            practice_instruction_level = level
+        for trial in practice_trials:
             trial_counter += 1
             row = run_trial(
                 trial,
@@ -1283,15 +1784,16 @@ def run_intermixed_levels(
                 sound,
                 stimuli_by_level[level],
                 assets_by_level[level],
+                audio_by_level[level],
                 rng,
                 trial_counter,
                 exp_clock,
                 markers,
+                f"practice_level{level}",
             )
             row["phase"] = "practice"
             writer.writerow(row)
             output_file.flush()
-
     level_blocks: list[tuple[str, list[Trial]]] = []
     for level in levels:
         trials = generate_level_trials(
@@ -1305,21 +1807,45 @@ def run_intermixed_levels(
             args.cd_schedule,
             active_trials,
             baseline_trials,
+            args.level3_cd,
         )
         level_blocks.extend((level, block) for block in split_blocks(trials))
     rng.shuffle(level_blocks)
 
     recent_rows: list[dict] = []
     completed_level3_blocks = 0
+    ready_pending = False
+    active_instruction_level = None
     for mixed_block_index, (level, block_trials) in enumerate(level_blocks, start=1):
         assets = assets_by_level[level]
         stimuli = stimuli_by_level[level]
+        if not args.skip_instructions and level != active_instruction_level:
+            if not welcome_shown:
+                show_image_slide(
+                    win,
+                    event,
+                    visual,
+                    sound,
+                    assets["language"] / "WelcomeLevel1.PNG",
+                    assets["language"] / "WelcomeLevel1.mp3",
+                )
+                welcome_shown = True
+            show_level_instruction(win, event, visual, sound, assets, level, "main")
+            show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
+            ready_pending = False
+            active_instruction_level = level
         markers.send("block_start")
-        show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
+        if ready_pending:
+            show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
+            ready_pending = False
 
         for trial in block_trials:
             trial_counter += 1
-            row = run_trial(trial, args, win, core, event, visual, sound, stimuli, assets, rng, trial_counter, exp_clock, markers)
+            block_name = f"mixed{mixed_block_index:02d}_level{level}_block{trial.block:02d}"
+            row = run_trial(
+                trial, args, win, core, event, visual, sound, stimuli, assets,
+                audio_by_level[level], rng, trial_counter, exp_clock, markers, block_name
+            )
             row["phase"] = "main"
             row["mixed_block_index"] = mixed_block_index
             writer.writerow(row)
@@ -1329,19 +1855,17 @@ def run_intermixed_levels(
         if level == "3":
             completed_level3_blocks += 1
             if completed_level3_blocks == args.blocks // 2:
-                reversal = visual.TextStim(
-                    win,
-                    text="Rule change\n\nMeaningful: RIGHT\nAmbiguous: LEFT\n\nPress space to continue",
-                    color="white",
-                    height=0.04,
-                    units="height",
-                )
-                reversal.draw()
-                win.flip()
-                wait_for_continue(event)
+                show_transition_text(win, event, visual, "Rule change\nMeaningful: RIGHT\nAmbiguous: LEFT")
+                ready_pending = True
 
         if mixed_block_index % 2 == 0:
-            show_feedback(win, event, visual, sound, assets["language"], recent_rows[-2 * block_trial_count:])
+            show_feedback(
+                win, event, visual, sound, assets["language"],
+                recent_rows[-2 * block_trial_count:],
+                len(recent_rows),
+                total_main_trials,
+            )
+            ready_pending = True
 
     if not args.skip_instructions and levels:
         assets = assets_by_level[levels[-1]]
@@ -1353,6 +1877,7 @@ def main() -> int:
     args = parse_args()
     if not args.used_cli_config and not args.no_config_dialog:
         args = show_config_dialog(args)
+        save_config_defaults(args_to_config(args))
     levels = [level.strip() for level in args.levels.split(",") if level.strip()]
     invalid = [level for level in levels if level not in LEVEL_TEMPLATES]
     if invalid:
@@ -1360,8 +1885,8 @@ def main() -> int:
     validate_config(args)
 
     rng = random.Random(args.seed)
-    output_dir = ROOT / "data"
-    output_dir.mkdir(exist_ok=True)
+    output_dir = args.output_dir if args.output_dir is not None else ROOT / "data"
+    output_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = output_dir / f"angel_{args.participant}_{'_'.join(levels)}_{stamp}.csv"
 
