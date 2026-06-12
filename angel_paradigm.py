@@ -25,8 +25,8 @@ DEFAULT_EPRIME = ROOT / "EPrimeFiles"
 DEFAULT_CONFIG = ROOT / "angel_config.json"
 
 LEVEL_TEMPLATES = {
-    "2": "CCS_EEG_ANGELv2_Level2_Template",
-    "3": "CCS_EEG_ANGELv2_Level3_Template",
+    "1": "CCS_EEG_ANGELv2_Level2_Template",
+    "2": "CCS_EEG_ANGELv2_Level3_Template",
 }
 
 CATEGORIES = {
@@ -66,7 +66,7 @@ BLOCK_CHOICES = [16, 8, 4]
 TRIALS_PER_BLOCK_CHOICES = ["25+3", "20+3"]
 
 CONFIG_DEFAULTS = {
-    "levels": "2,3",
+    "levels": "1,2",
     "language": "english",
     "participant": "test",
     "seed": None,
@@ -81,7 +81,7 @@ CONFIG_DEFAULTS = {
     "paired_tone_offset_min": -0.240,
     "paired_tone_offset_max": 0.160,
     "cd_schedule": "by-block",
-    "level3_cd": False,
+    "level2_cd": False,
     "intermix_level_blocks": False,
     "trials_per_block": "25+3",
     "stim_duration": 0.240,
@@ -99,6 +99,8 @@ CONFIG_DEFAULTS = {
     "cd_volume": 0.7,
     "cd_repeats": 1,
     "cd_repeat_gap": 0.250,
+    "left_keys": ["left", "z", "1"],
+    "right_keys": ["right", "slash", "2"],
 }
 
 KEYS = {
@@ -107,6 +109,14 @@ KEYS = {
     "quit": ["escape", "q"],
     "continue": ["space", "return"],
 }
+
+
+def parse_keys_list(val) -> list[str]:
+    if isinstance(val, list):
+        return [str(x).strip() for x in val if str(x).strip()]
+    if isinstance(val, str):
+        return [x.strip() for x in val.split(",") if x.strip()]
+    return []
 
 
 @dataclass(frozen=True)
@@ -131,12 +141,12 @@ class Trial:
 def parse_args() -> argparse.Namespace:
     config_defaults = load_config_defaults()
     parser = argparse.ArgumentParser(
-        description="Run the ANGEL Level 2/3 PsychoPy paradigm."
+        description="Run the ANGEL Level 1/2 PsychoPy paradigm."
     )
     parser.add_argument(
         "--levels",
         default=config_defaults["levels"],
-        help="Comma-separated levels to run: 2, 3, or 2,3. Default: 2,3.",
+        help="Comma-separated levels to run: 1, 2, or 1,2. Default: 1,2.",
     )
     parser.add_argument(
         "--language",
@@ -221,16 +231,16 @@ def parse_args() -> argparse.Namespace:
         help="CD schedule: immediate, delayed, or none by block, within block, or forced to one mode.",
     )
     parser.add_argument(
-        "--level3-cd",
+        "--level2-cd",
         action=argparse.BooleanOptionalAction,
-        default=config_defaults["level3_cd"],
-        help="Enable corollary feedback in Level 3. Default from config.",
+        default=config_defaults["level2_cd"],
+        help="Enable corollary feedback in Level 2. Default from config.",
     )
     parser.add_argument(
         "--intermix-level-blocks",
         action="store_true",
         default=config_defaults["intermix_level_blocks"],
-        help="Shuffle Level 2 and Level 3 blocks together instead of running each level contiguously.",
+        help="Shuffle Level 1 and Level 2 blocks together instead of running each level contiguously.",
     )
     parser.add_argument(
         "--trials-per-block",
@@ -331,6 +341,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not show the PsychoPy configuration dialog when no experiment arguments are supplied.",
     )
+    left_default = config_defaults["left_keys"]
+    if isinstance(left_default, list):
+        left_default = ",".join(left_default)
+    right_default = config_defaults["right_keys"]
+    if isinstance(right_default, list):
+        right_default = ",".join(right_default)
+
+    parser.add_argument(
+        "--left-keys",
+        default=left_default,
+        help=f"Comma-separated keys for left button response. Default: {left_default}",
+    )
+    parser.add_argument(
+        "--right-keys",
+        default=right_default,
+        help=f"Comma-separated keys for right button response. Default: {right_default}",
+    )
     args, _unknown = parser.parse_known_args()
     args.used_cli_config = any(
         arg == option or arg.startswith(f"{option}=")
@@ -357,8 +384,10 @@ EXPERIMENT_CLI_OPTIONS = {
     "--paired-tone-offset-min",
     "--paired-tone-offset-max",
     "--cd-schedule",
-    "--level3-cd",
-    "--no-level3-cd",
+    "--level2-cd",
+    "--no-level2-cd",
+    "--left-keys",
+    "--right-keys",
     "--intermix-level-blocks",
     "--trials-per-block",
     "--stim-duration",
@@ -407,6 +436,8 @@ def args_to_config(args: argparse.Namespace) -> dict:
         value = getattr(args, key, CONFIG_DEFAULTS[key])
         if isinstance(value, Path):
             value = str(value)
+        if key in ("left_keys", "right_keys") and isinstance(value, str):
+            value = parse_keys_list(value)
         config[key] = value
     return config
 
@@ -431,7 +462,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
 
     run_data = {
         "participant": args.participant,
-        "levels": ["2,3", "2", "3"],
+        "levels": ["1,2", "1", "2"],
         "language": ["english", "hindi", "kannada"],
         "category_set": ["all", "face", "shape"],
         "blocks": [str(value) for value in BLOCK_CHOICES],
@@ -473,7 +504,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
         "paired_tone_offset_min": args.paired_tone_offset_min,
         "paired_tone_offset_max": args.paired_tone_offset_max,
         "cd_schedule": ["by-block", "within-block", "all-immediate", "all-delayed", "all-none"],
-        "level3_cd": args.level3_cd,
+        "level2_cd": args.level2_cd,
         "cd_volume": args.cd_volume,
         "cd_repeats": args.cd_repeats,
         "cd_repeat_gap": args.cd_repeat_gap,
@@ -494,7 +525,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
             "paired_tone_offset_min",
             "paired_tone_offset_max",
             "cd_schedule",
-            "level3_cd",
+            "level2_cd",
             "cd_volume",
             "cd_repeats",
             "cd_repeat_gap",
@@ -506,6 +537,8 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
         "lsl_stream_name": args.lsl_stream_name,
         "parallel_address": args.parallel_address,
         "ttl_pulse_width": args.ttl_pulse_width,
+        "left_keys": ",".join(args.left_keys) if isinstance(args.left_keys, list) else args.left_keys,
+        "right_keys": ",".join(args.right_keys) if isinstance(args.right_keys, list) else args.right_keys,
         "output_dir_blank_for_default": "" if args.output_dir is None else str(args.output_dir),
     }
     show_dialog_page(
@@ -517,6 +550,8 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
             "lsl_stream_name",
             "parallel_address",
             "ttl_pulse_width",
+            "left_keys",
+            "right_keys",
             "output_dir_blank_for_default",
         ],
     )
@@ -544,10 +579,12 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
     args.paired_tone_offset_min = float(dialog_data["paired_tone_offset_min"])
     args.paired_tone_offset_max = float(dialog_data["paired_tone_offset_max"])
     args.cd_schedule = str(dialog_data["cd_schedule"])
-    args.level3_cd = bool(dialog_data["level3_cd"])
+    args.level2_cd = bool(dialog_data["level2_cd"])
     args.cd_volume = float(dialog_data["cd_volume"])
     args.cd_repeats = int(dialog_data["cd_repeats"])
     args.cd_repeat_gap = float(dialog_data["cd_repeat_gap"])
+    args.left_keys = parse_keys_list(dialog_data["left_keys"])
+    args.right_keys = parse_keys_list(dialog_data["right_keys"])
     args.marker_mode = str(dialog_data["marker_mode"])
     args.lsl_stream_name = str(dialog_data["lsl_stream_name"])
     args.parallel_address = str(dialog_data["parallel_address"])
@@ -672,7 +709,7 @@ def generate_level_trials(
     cd_schedule: str = "by-block",
     active_trials_per_block: int = 25,
     baseline_trials_per_block: int = 3,
-    level3_cd: bool = False,
+    level2_cd: bool = False,
 ) -> list[Trial]:
     categories = CATEGORY_SETS[category_set]
     block_specs: list[tuple[str, str]] = []
@@ -682,7 +719,7 @@ def generate_level_trials(
     block_specs = block_specs[:blocks]
     rng.shuffle(block_specs)
 
-    if level == "2":
+    if level == "1":
         immediate_blocks = set(rng.sample(range(1, blocks + 1), blocks // 2))
     else:
         immediate_blocks = set()
@@ -732,11 +769,11 @@ def generate_level_trials(
             reversal_phase = None
             correct_response = None
 
-            if level == "2":
+            if level == "1":
                 correct_response = side_to_key(target_side)
                 corollary_mode = block_cd_modes[trial_index - 1]
             else:
-                corollary_mode = block_cd_modes[trial_index - 1] if level3_cd else None
+                corollary_mode = block_cd_modes[trial_index - 1] if level2_cd else None
                 reversal_phase = "pre_reversal" if block_index <= blocks // 2 else "post_reversal"
                 meaning = CATEGORIES[stimulus_category]["meaning"]
                 if reversal_phase == "pre_reversal":
@@ -866,7 +903,7 @@ def generate_practice(
             args.cd_schedule,
             active_trials,
             baseline_trials,
-            args.level3_cd,
+            args.level2_cd,
         )
         if trial.trial_type == "active"
     ]
@@ -1648,12 +1685,16 @@ def run_level(
     block_trial_count = active_trials + baseline_trials
     total_main_trials = args.blocks * block_trial_count
 
+    practice_trials = list(generate_practice(level, args.practice, rng, args))
     if not args.skip_instructions:
         show_image_slide(win, event, visual, sound, assets["language"] / "WelcomeLevel1.PNG", assets["language"] / "WelcomeLevel1.mp3")
         show_level_instruction(win, event, visual, sound, assets, level, "main")
-        show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
+        if practice_trials:
+            show_image_slide(win, event, visual, sound, assets["language"] / "PracticeStart.PNG", assets["language"] / "PracticeStart.mp3")
+        else:
+            show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
 
-    for trial in generate_practice(level, args.practice, rng, args):
+    for trial in practice_trials:
         trial_counter += 1
         row = run_trial(
             trial, args, win, core, event, visual, sound, stimuli, assets, audio_cache,
@@ -1662,6 +1703,10 @@ def run_level(
         row["phase"] = "practice"
         writer.writerow(row)
         output_file.flush()
+
+    if practice_trials and not args.skip_instructions:
+        show_image_slide(win, event, visual, sound, assets["language"] / "PracticeEnd.PNG", assets["language"] / "PracticeEnd.mp3")
+        show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
 
     block_rows: list[dict] = []
     ready_pending = False
@@ -1676,7 +1721,7 @@ def run_level(
         args.cd_schedule,
         active_trials,
         baseline_trials,
-        args.level3_cd,
+        args.level2_cd,
     ):
         if trial.trial_in_block == 1:
             markers.send("block_start")
@@ -1704,7 +1749,7 @@ def run_level(
             )
             ready_pending = True
 
-        if level == "3" and trial.block == args.blocks // 2 and trial.trial_in_block == block_trial_count:
+        if level == "2" and trial.block == args.blocks // 2 and trial.trial_in_block == block_trial_count:
             reversal = visual.TextStim(
                 win,
                 text="Rule change\n\nMeaningful: RIGHT\nAmbiguous: LEFT\n\nPress space to continue",
@@ -1757,7 +1802,7 @@ def run_intermixed_levels(
     welcome_shown = False
     practice_instruction_level = None
     for level in levels:
-        practice_trials = generate_practice(level, args.practice, rng, args)
+        practice_trials = list(generate_practice(level, args.practice, rng, args))
         if practice_trials and not args.skip_instructions and level != practice_instruction_level:
             if not welcome_shown:
                 show_image_slide(
@@ -1770,7 +1815,7 @@ def run_intermixed_levels(
                 )
                 welcome_shown = True
             show_level_instruction(win, event, visual, sound, assets_by_level[level], level, "practice")
-            show_image_slide(win, event, visual, sound, assets_by_level[level]["language"] / "Ready.PNG", assets_by_level[level]["language"] / "Ready.mp3")
+            show_image_slide(win, event, visual, sound, assets_by_level[level]["language"] / "PracticeStart.PNG", assets_by_level[level]["language"] / "PracticeStart.mp3")
             practice_instruction_level = level
         for trial in practice_trials:
             trial_counter += 1
@@ -1794,6 +1839,9 @@ def run_intermixed_levels(
             row["phase"] = "practice"
             writer.writerow(row)
             output_file.flush()
+        if practice_trials and not args.skip_instructions:
+            show_image_slide(win, event, visual, sound, assets_by_level[level]["language"] / "PracticeEnd.PNG", assets_by_level[level]["language"] / "PracticeEnd.mp3")
+
     level_blocks: list[tuple[str, list[Trial]]] = []
     for level in levels:
         trials = generate_level_trials(
@@ -1807,13 +1855,13 @@ def run_intermixed_levels(
             args.cd_schedule,
             active_trials,
             baseline_trials,
-            args.level3_cd,
+            args.level2_cd,
         )
         level_blocks.extend((level, block) for block in split_blocks(trials))
     rng.shuffle(level_blocks)
 
     recent_rows: list[dict] = []
-    completed_level3_blocks = 0
+    completed_level2_blocks = 0
     ready_pending = False
     active_instruction_level = None
     for mixed_block_index, (level, block_trials) in enumerate(level_blocks, start=1):
@@ -1852,9 +1900,9 @@ def run_intermixed_levels(
             output_file.flush()
             recent_rows.append(row)
 
-        if level == "3":
-            completed_level3_blocks += 1
-            if completed_level3_blocks == args.blocks // 2:
+        if level == "2":
+            completed_level2_blocks += 1
+            if completed_level2_blocks == args.blocks // 2:
                 show_transition_text(win, event, visual, "Rule change\nMeaningful: RIGHT\nAmbiguous: LEFT")
                 ready_pending = True
 
@@ -1881,8 +1929,11 @@ def main() -> int:
     levels = [level.strip() for level in args.levels.split(",") if level.strip()]
     invalid = [level for level in levels if level not in LEVEL_TEMPLATES]
     if invalid:
-        raise SystemExit(f"Invalid level(s): {invalid}. Use 2, 3, or 2,3.")
+        raise SystemExit(f"Invalid level(s): {invalid}. Use 1, 2, or 1,2.")
     validate_config(args)
+
+    KEYS["left"] = parse_keys_list(args.left_keys)
+    KEYS["right"] = parse_keys_list(args.right_keys)
 
     rng = random.Random(args.seed)
     output_dir = args.output_dir if args.output_dir is not None else ROOT / "data"
@@ -1901,7 +1952,7 @@ def main() -> int:
     markers = MarkerSender(args, core, exp_clock)
 
     fieldnames = list(row_from_trial(
-        Trial("2", 0, 0, "baseline", None, None, "baseline", None, None, None, "blank", None, None, None, None),
+        Trial("1", 0, 0, "baseline", None, None, "baseline", None, None, None, "blank", None, None, None, None),
         0,
         None,
         None,

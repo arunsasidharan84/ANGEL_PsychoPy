@@ -1,5 +1,5 @@
 {
-  "levels": "2,3",
+  "levels": "1,2",
   "language": "english",
   "participant": "test",
   "seed": null,
@@ -14,9 +14,9 @@
   "paired_tone_offset_min": -0.24,
   "paired_tone_offset_max": 0.24,
   "cd_schedule": "by-block",
-  "level3_cd": true,
+  "level2_cd": true,
   "intermix_level_blocks": true,
-  "trials_per_block": "25+3",
+  "trials_per_block": "20+3",
   "stim_duration": 0.24,
   "response_window": 0.7,
   "post_mask_min": 0.2,
@@ -31,5 +31,15 @@
   "ttl_pulse_width": 0.005,
   "cd_volume": 0.7,
   "cd_repeats": 1,
-  "cd_repeat_gap": 0.25
+  "cd_repeat_gap": 0.25,
+  "left_keys": [
+    "left",
+    "z",
+    "1"
+  ],
+  "right_keys": [
+    "right",
+    "slash",
+    "2"
+  ]
 }

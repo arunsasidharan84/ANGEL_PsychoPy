@@ -1,7 +1,7 @@
 # ANGEL PsychoPy Recreation
 
 This repository contains a transparent PsychoPy recreation of the ANGEL E-Prime
-Level 2 and Level 3 paradigms using the local E-Prime resource folders.
+Level 2 and Level 3 paradigms (renamed as Level 1 and Level 2 respectively) using the local E-Prime resource folders.
 
 Ref: Nair AK, Sasidharan A, John JP, Mehrotra S and Kutty BM (2016) Assessing Neurocognition via Gamified Experimental Logic: A Novel Approach to Simultaneous Acquisition of Multiple ERPs. Front. Neurosci. 10:1. doi: 10.3389/fnins.2016.00001
 https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2016.00001/full
@@ -20,10 +20,10 @@ structure:
 - Continuous paired-tone offsets by default, using one standard/deviant sound
   file and programmatic onset timing. The E-Prime fixed offsets are still
   available.
-- Level 2 side responses with configurable immediate, delayed, and no-feedback
+- Level 1 (original Level 2) side responses with configurable immediate, delayed, and no-feedback
   corollary discharge conditions.
-- Optional Level 3 corollary tones with the same CD schedule.
-- Level 3 meaningful/ambiguous responses with a midpoint rule reversal.
+- Optional Level 2 (original Level 3) corollary tones with the same CD schedule.
+- Level 2 (original Level 3) meaningful/ambiguous responses with a midpoint rule reversal.
 - Optional EEG/event markers over LSL and/or parallel-port TTL.
 - Feedback after every two main blocks, displayed together with score, mean RT,
   progress, image, and audio.
@@ -34,19 +34,19 @@ Run from PsychoPy's Python environment or from a Python environment where
 `psychopy` is installed:
 
 ```bash
-python angel_paradigm.py --participant S001 --levels 2,3 --language english
+python angel_paradigm.py --participant S001 --levels 1,2 --language english
 ```
 
 Useful test run:
 
 ```bash
-python angel_paradigm.py --participant test --levels 2 --blocks 1 --practice 2 --no-fullscreen
+python angel_paradigm.py --participant test --levels 1 --blocks 1 --practice 2 --no-fullscreen
 ```
 
-Reduced face-only Level 2/3 run with 8 blocks per level and intermixed blocks:
+Reduced face-only Level 1/2 run with 8 blocks per level and intermixed blocks:
 
 ```bash
-python angel_paradigm.py --participant S001 --levels 2,3 --category-set face --blocks 8 --intermix-level-blocks
+python angel_paradigm.py --participant S001 --levels 1,2 --category-set face --blocks 8 --intermix-level-blocks
 ```
 
 Paper/E-Prime-style fixed paired-tone offsets and blockwise CD on/off:
@@ -63,8 +63,9 @@ This file can be edited manually and shared across lab machines/users.
 
 ## Keys
 
-- Left response: left arrow, `z`, or `1`
-- Right response: right arrow, `/`, or `2`
+Response keys are configurable in `angel_config.json` via `"left_keys"` and `"right_keys"` or command line parameters `--left-keys` and `--right-keys`. The defaults are:
+- Left response: left arrow, `z`, or `1` (configurable)
+- Right response: right arrow, `/` (slash), or `2` (configurable)
 - Continue: space or return
 - Quit: escape or `q`
 
@@ -104,18 +105,20 @@ reversal phase, response, RT, and accuracy.
 - `--paired-tone-offset-min` / `--paired-tone-offset-max`: continuous offset
   range in seconds relative to visual onset.
 - `--cd-schedule by-block|within-block|all-immediate|all-delayed|all-none`:
-  Level 2 CD schedule. Trials are logged as `cd_condition=cd_immediate`,
+  Level 1 CD schedule. Trials are logged as `cd_condition=cd_immediate`,
   `cd_condition=cd_delayed`, or `cd_condition=cd_none`. Except for the explicit
   `all-none` test mode, `cd_none` is held at 20% of active trials in each block.
   `by-block` assigns the feedback trials in a block to either immediate or
   delayed CD; `within-block` randomizes immediate, delayed, and none trials
   inside every block.
-- `--level3-cd` / `--no-level3-cd`: enable or disable corollary feedback in
-  Level 3.
+- `--level2-cd` / `--no-level2-cd`: enable or disable corollary feedback in
+  Level 2.
+- `--left-keys`: comma-separated list of keys for left button response.
+- `--right-keys`: comma-separated list of keys for right button response.
 - `--cd-volume`, `--cd-repeats`, `--cd-repeat-gap`: tune corollary feedback
   audibility. The bundled CD WAV is 200 ms long; repeated plays are automatically
   spaced far enough apart to avoid overlap.
-- `--intermix-level-blocks`: shuffle Level 2 and Level 3 blocks into one
+- `--intermix-level-blocks`: shuffle Level 1 and Level 2 blocks into one
   combined sequence.
 - `--marker-mode none|lsl|parallel|both`: send markers. LSL uses
   `--lsl-stream-name`; TTL uses `--parallel-address` and `--ttl-pulse-width`.
