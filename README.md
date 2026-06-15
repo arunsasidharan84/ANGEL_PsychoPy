@@ -115,6 +115,8 @@ reversal phase, response, RT, and accuracy.
   Level 2.
 - `--left-keys`: comma-separated list of keys for left button response.
 - `--right-keys`: comma-separated list of keys for right button response.
+- `--trigger-keys`: comma-separated trigger keys to start the main task (default: space,s).
+- `--wait-duration-s`: duration of the 'Waiting...' slide in seconds before the first block (default: 11.0).
 - `--cd-volume`, `--cd-repeats`, `--cd-repeat-gap`: tune corollary feedback
   audibility. The bundled CD WAV is 200 ms long; repeated plays are automatically
   spaced far enough apart to avoid overlap.

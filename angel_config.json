@@ -16,7 +16,7 @@
   "cd_schedule": "by-block",
   "level2_cd": true,
   "intermix_level_blocks": true,
-  "trials_per_block": "20+3",
+  "trials_per_block": "25+3",
   "stim_duration": 0.24,
   "response_window": 0.7,
   "post_mask_min": 0.2,
@@ -41,5 +41,10 @@
     "right",
     "slash",
     "2"
-  ]
+  ],
+  "trigger_keys": [
+    "space",
+    "s"
+  ],
+  "wait_duration_s": 11.0
 }

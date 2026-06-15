@@ -101,6 +101,8 @@ CONFIG_DEFAULTS = {
     "cd_repeat_gap": 0.250,
     "left_keys": ["left", "z", "1"],
     "right_keys": ["right", "slash", "2"],
+    "trigger_keys": ["space", "s"],
+    "wait_duration_s": 11.0,
 }
 
 KEYS = {
@@ -108,6 +110,7 @@ KEYS = {
     "right": ["right", "slash", "2"],
     "quit": ["escape", "q"],
     "continue": ["space", "return"],
+    "trigger": ["space", "s"],
 }
 
 
@@ -347,6 +350,9 @@ def parse_args() -> argparse.Namespace:
     right_default = config_defaults["right_keys"]
     if isinstance(right_default, list):
         right_default = ",".join(right_default)
+    trigger_default = config_defaults["trigger_keys"]
+    if isinstance(trigger_default, list):
+        trigger_default = ",".join(trigger_default)
 
     parser.add_argument(
         "--left-keys",
@@ -357,6 +363,17 @@ def parse_args() -> argparse.Namespace:
         "--right-keys",
         default=right_default,
         help=f"Comma-separated keys for right button response. Default: {right_default}",
+    )
+    parser.add_argument(
+        "--trigger-keys",
+        default=trigger_default,
+        help=f"Comma-separated keys to start the main task. Default: {trigger_default}",
+    )
+    parser.add_argument(
+        "--wait-duration-s",
+        type=float,
+        default=config_defaults["wait_duration_s"],
+        help="Duration of the 'Waiting...' slide in seconds. Default: 11.0.",
     )
     args, _unknown = parser.parse_known_args()
     args.used_cli_config = any(
@@ -388,6 +405,8 @@ EXPERIMENT_CLI_OPTIONS = {
     "--no-level2-cd",
     "--left-keys",
     "--right-keys",
+    "--trigger-keys",
+    "--wait-duration-s",
     "--intermix-level-blocks",
     "--trials-per-block",
     "--stim-duration",
@@ -436,7 +455,7 @@ def args_to_config(args: argparse.Namespace) -> dict:
         value = getattr(args, key, CONFIG_DEFAULTS[key])
         if isinstance(value, Path):
             value = str(value)
-        if key in ("left_keys", "right_keys") and isinstance(value, str):
+        if key in ("left_keys", "right_keys", "trigger_keys") and isinstance(value, str):
             value = parse_keys_list(value)
         config[key] = value
     return config
@@ -539,6 +558,8 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
         "ttl_pulse_width": args.ttl_pulse_width,
         "left_keys": ",".join(args.left_keys) if isinstance(args.left_keys, list) else args.left_keys,
         "right_keys": ",".join(args.right_keys) if isinstance(args.right_keys, list) else args.right_keys,
+        "trigger_keys": ",".join(args.trigger_keys) if isinstance(args.trigger_keys, list) else args.trigger_keys,
+        "wait_duration_s": args.wait_duration_s,
         "output_dir_blank_for_default": "" if args.output_dir is None else str(args.output_dir),
     }
     show_dialog_page(
@@ -552,6 +573,8 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
             "ttl_pulse_width",
             "left_keys",
             "right_keys",
+            "trigger_keys",
+            "wait_duration_s",
             "output_dir_blank_for_default",
         ],
     )
@@ -585,6 +608,8 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
     args.cd_repeat_gap = float(dialog_data["cd_repeat_gap"])
     args.left_keys = parse_keys_list(dialog_data["left_keys"])
     args.right_keys = parse_keys_list(dialog_data["right_keys"])
+    args.trigger_keys = parse_keys_list(dialog_data["trigger_keys"])
+    args.wait_duration_s = float(dialog_data["wait_duration_s"])
     args.marker_mode = str(dialog_data["marker_mode"])
     args.lsl_stream_name = str(dialog_data["lsl_stream_name"])
     args.parallel_address = str(dialog_data["parallel_address"])
@@ -1614,6 +1639,171 @@ def row_from_trial(
     }
 
 
+def show_trigger_and_wait(win, event, core, visual, trigger_keys: list[str], wait_duration: float) -> None:
+    stim = visual.TextStim(
+        win,
+        text="Ready to start Main Task?\n\nWaiting for trigger...",
+        color="white",
+        height=0.04,
+        units="height",
+    )
+    stim.draw()
+    win.flip()
+
+    event.clearEvents()
+    while True:
+        keys = event.waitKeys(keyList=trigger_keys + ["escape", "q"])
+        if keys:
+            key = keys[0]
+            if key in ["escape", "q"]:
+                raise KeyboardInterrupt
+            if key in trigger_keys:
+                break
+
+    if wait_duration > 0:
+        stim_wait = visual.TextStim(
+            win,
+            text="Waiting...",
+            color="white",
+            height=0.04,
+            units="height",
+        )
+        stim_wait.draw()
+        win.flip()
+        core.wait(wait_duration)
+
+
+def show_practice_feedback(
+    win,
+    event,
+    visual,
+    sound,
+    language_dir: Path,
+    practice_rows: list[dict],
+) -> bool:
+    active = [row for row in practice_rows if row["trial_type"] == "active" and row["accuracy"] is not None]
+    if not active:
+        return False
+    accuracy = sum(int(row["accuracy"]) for row in active) / len(active)
+    correct_rts = [float(row["rt_s"]) for row in active if row["accuracy"] == 1 and row["rt_s"] not in [None, ""]]
+    mean_rt = sum(correct_rts) / len(correct_rts) if correct_rts else None
+
+    if accuracy < 0.85:
+        feedback = "FeedbackWelltried"
+    elif accuracy <= 0.95:
+        feedback = "FeedbackGoodjob"
+    else:
+        feedback = "FeedbackOutstanding"
+
+    text = f"Practice Session complete!\n\nAccuracy: {accuracy * 100:.1f}%"
+    if mean_rt is not None:
+        text += f"\nMean RT: {mean_rt * 1000:.0f} ms"
+    text += "\n\nPress R to repeat practice, or Space to continue to the experiment."
+
+    image_path = existing_case_variant(language_dir / f"{feedback}.PNG")
+    audio_path = existing_case_variant(language_dir / f"{feedback}.mp3")
+    if audio_path.exists():
+        try:
+            audio = sound.Sound(str(audio_path))
+            audio.play()
+        except Exception:
+            audio = None
+    else:
+        audio = None
+
+    if image_path.exists():
+        image = visual.ImageStim(win, image=str(image_path), pos=(0, 0.14), size=(1.05, 0.78), units="height")
+        image.draw()
+    stim = visual.TextStim(win, text=text, pos=(0, -0.34), color="white", height=0.035, units="height")
+    stim.draw()
+    win.flip()
+
+    event.clearEvents()
+    while True:
+        keys = event.waitKeys(keyList=["r", "space", "escape", "q"])
+        if keys:
+            key = keys[0]
+            if key in ["escape", "q"]:
+                raise KeyboardInterrupt
+            if audio:
+                audio.stop()
+            if key == "r":
+                return True
+            if key == "space":
+                return False
+
+
+def run_practice_phase(
+    levels: list[str],
+    args: argparse.Namespace,
+    win,
+    core,
+    event,
+    visual,
+    sound,
+    writer: csv.DictWriter,
+    output_file,
+    rng: random.Random,
+    trial_counter: int,
+    exp_clock,
+    markers: MarkerSender,
+) -> int:
+    welcome_shown = False
+    for level in levels:
+        template_dir = args.resource_root / LEVEL_TEMPLATES[level]
+        assets = load_assets(template_dir, args.language)
+        stimuli = make_stimuli(win, visual, assets)
+        audio_cache = make_audio_cache(sound, assets)
+
+        while True:
+            practice_trials = list(generate_practice(level, args.practice, rng, args))
+            if not practice_trials:
+                break
+
+            if not args.skip_instructions:
+                if not welcome_shown:
+                    show_image_slide(
+                        win,
+                        event,
+                        visual,
+                        sound,
+                        assets["language"] / "WelcomeLevel1.PNG",
+                        assets["language"] / "WelcomeLevel1.mp3",
+                    )
+                    welcome_shown = True
+                show_level_instruction(win, event, visual, sound, assets, level, "practice")
+                show_image_slide(win, event, visual, sound, assets["language"] / "PracticeStart.PNG", assets["language"] / "PracticeStart.mp3")
+
+            practice_rows = []
+            for trial in practice_trials:
+                trial_counter += 1
+                row = run_trial(
+                    trial, args, win, core, event, visual, sound, stimuli, assets, audio_cache,
+                    rng, trial_counter, exp_clock, markers, f"practice_level{level}"
+                )
+                row["phase"] = "practice"
+                writer.writerow(row)
+                output_file.flush()
+                practice_rows.append(row)
+
+            if not args.skip_instructions:
+                show_image_slide(win, event, visual, sound, assets["language"] / "PracticeEnd.PNG", assets["language"] / "PracticeEnd.mp3")
+
+            # Check if user wants to repeat
+            repeat = show_practice_feedback(
+                win,
+                event,
+                visual,
+                sound,
+                assets["language"],
+                practice_rows,
+            )
+            if not repeat:
+                break
+
+    return trial_counter
+
+
 def show_feedback(
     win,
     event,
@@ -1662,7 +1852,7 @@ def show_feedback(
         audio.stop()
 
 
-def run_level(
+def run_main_level(
     level: str,
     args: argparse.Namespace,
     win,
@@ -1685,27 +1875,9 @@ def run_level(
     block_trial_count = active_trials + baseline_trials
     total_main_trials = args.blocks * block_trial_count
 
-    practice_trials = list(generate_practice(level, args.practice, rng, args))
     if not args.skip_instructions:
         show_image_slide(win, event, visual, sound, assets["language"] / "WelcomeLevel1.PNG", assets["language"] / "WelcomeLevel1.mp3")
         show_level_instruction(win, event, visual, sound, assets, level, "main")
-        if practice_trials:
-            show_image_slide(win, event, visual, sound, assets["language"] / "PracticeStart.PNG", assets["language"] / "PracticeStart.mp3")
-        else:
-            show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
-
-    for trial in practice_trials:
-        trial_counter += 1
-        row = run_trial(
-            trial, args, win, core, event, visual, sound, stimuli, assets, audio_cache,
-            rng, trial_counter, exp_clock, markers, f"practice_level{level}"
-        )
-        row["phase"] = "practice"
-        writer.writerow(row)
-        output_file.flush()
-
-    if practice_trials and not args.skip_instructions:
-        show_image_slide(win, event, visual, sound, assets["language"] / "PracticeEnd.PNG", assets["language"] / "PracticeEnd.mp3")
         show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
 
     block_rows: list[dict] = []
@@ -1768,7 +1940,7 @@ def run_level(
     return trial_counter
 
 
-def run_intermixed_levels(
+def run_intermixed_main_levels(
     levels: list[str],
     args: argparse.Namespace,
     win,
@@ -1799,49 +1971,6 @@ def run_intermixed_levels(
     block_trial_count = active_trials + baseline_trials
     total_main_trials = len(levels) * args.blocks * block_trial_count
 
-    welcome_shown = False
-    practice_instruction_level = None
-    for level in levels:
-        practice_trials = list(generate_practice(level, args.practice, rng, args))
-        if practice_trials and not args.skip_instructions and level != practice_instruction_level:
-            if not welcome_shown:
-                show_image_slide(
-                    win,
-                    event,
-                    visual,
-                    sound,
-                    assets_by_level[level]["language"] / "WelcomeLevel1.PNG",
-                    assets_by_level[level]["language"] / "WelcomeLevel1.mp3",
-                )
-                welcome_shown = True
-            show_level_instruction(win, event, visual, sound, assets_by_level[level], level, "practice")
-            show_image_slide(win, event, visual, sound, assets_by_level[level]["language"] / "PracticeStart.PNG", assets_by_level[level]["language"] / "PracticeStart.mp3")
-            practice_instruction_level = level
-        for trial in practice_trials:
-            trial_counter += 1
-            row = run_trial(
-                trial,
-                args,
-                win,
-                core,
-                event,
-                visual,
-                sound,
-                stimuli_by_level[level],
-                assets_by_level[level],
-                audio_by_level[level],
-                rng,
-                trial_counter,
-                exp_clock,
-                markers,
-                f"practice_level{level}",
-            )
-            row["phase"] = "practice"
-            writer.writerow(row)
-            output_file.flush()
-        if practice_trials and not args.skip_instructions:
-            show_image_slide(win, event, visual, sound, assets_by_level[level]["language"] / "PracticeEnd.PNG", assets_by_level[level]["language"] / "PracticeEnd.mp3")
-
     level_blocks: list[tuple[str, list[Trial]]] = []
     for level in levels:
         trials = generate_level_trials(
@@ -1864,6 +1993,8 @@ def run_intermixed_levels(
     completed_level2_blocks = 0
     ready_pending = False
     active_instruction_level = None
+    welcome_shown = True
+
     for mixed_block_index, (level, block_trials) in enumerate(level_blocks, start=1):
         assets = assets_by_level[level]
         stimuli = stimuli_by_level[level]
@@ -1934,6 +2065,7 @@ def main() -> int:
 
     KEYS["left"] = parse_keys_list(args.left_keys)
     KEYS["right"] = parse_keys_list(args.right_keys)
+    KEYS["trigger"] = parse_keys_list(args.trigger_keys)
 
     rng = random.Random(args.seed)
     output_dir = args.output_dir if args.output_dir is not None else ROOT / "data"
@@ -1968,8 +2100,31 @@ def main() -> int:
         with output_path.open("w", newline="", encoding="utf-8") as output_file:
             writer = csv.DictWriter(output_file, fieldnames=fieldnames)
             writer.writeheader()
+            trial_counter = run_practice_phase(
+                levels,
+                args,
+                win,
+                core,
+                event,
+                visual,
+                sound,
+                writer,
+                output_file,
+                rng,
+                trial_counter,
+                exp_clock,
+                markers,
+            )
+            show_trigger_and_wait(
+                win,
+                event,
+                core,
+                visual,
+                KEYS["trigger"],
+                args.wait_duration_s,
+            )
             if args.intermix_level_blocks:
-                trial_counter = run_intermixed_levels(
+                trial_counter = run_intermixed_main_levels(
                     levels,
                     args,
                     win,
@@ -1986,7 +2141,7 @@ def main() -> int:
                 )
             else:
                 for level in levels:
-                    trial_counter = run_level(
+                    trial_counter = run_main_level(
                         level,
                         args,
                         win,
