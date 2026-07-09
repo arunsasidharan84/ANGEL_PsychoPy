@@ -24,6 +24,30 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_EPRIME = ROOT / "EPrimeFiles"
 DEFAULT_CONFIG = ROOT / "angel_config.json"
 
+CURRENT_ARGS = None
+
+
+def adjust_pos(pos: tuple[float, float] | list[float] | None) -> tuple[float, float] | None:
+    if pos is None:
+        return None
+    x, y = pos
+    if CURRENT_ARGS:
+        if CURRENT_ARGS.flip_horizontal:
+            x = -x
+        if CURRENT_ARGS.flip_vertical:
+            y = -y
+    return (x, y)
+
+
+def get_flip_params() -> dict:
+    if CURRENT_ARGS:
+        return {
+            "flipHoriz": CURRENT_ARGS.flip_horizontal,
+            "flipVert": CURRENT_ARGS.flip_vertical,
+        }
+    return {"flipHoriz": False, "flipVert": False}
+
+
 LEVEL_TEMPLATES = {
     "1": "CCS_EEG_ANGELv2_Level2_Template",
     "2": "CCS_EEG_ANGELv2_Level3_Template",
@@ -103,6 +127,10 @@ CONFIG_DEFAULTS = {
     "right_keys": ["right", "slash", "2"],
     "trigger_keys": ["space", "s"],
     "wait_duration_s": 11.0,
+    "audio_instructions": True,
+    "show_feedback": True,
+    "flip_horizontal": False,
+    "flip_vertical": False,
 }
 
 KEYS = {
@@ -183,10 +211,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--fullscreen",
-        action=argparse.BooleanOptionalAction,
-        default=config_defaults["fullscreen"],
+        action="store_true",
+        dest="fullscreen",
         help="Run fullscreen. Default: true.",
     )
+    parser.add_argument(
+        "--no-fullscreen",
+        action="store_false",
+        dest="fullscreen",
+        help="Do not run fullscreen.",
+    )
+    parser.set_defaults(fullscreen=config_defaults["fullscreen"])
     parser.add_argument(
         "--monitor",
         default=config_defaults["monitor"],
@@ -235,10 +270,73 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--level2-cd",
-        action=argparse.BooleanOptionalAction,
-        default=config_defaults["level2_cd"],
+        action="store_true",
+        dest="level2_cd",
         help="Enable corollary feedback in Level 2. Default from config.",
     )
+    parser.add_argument(
+        "--no-level2-cd",
+        action="store_false",
+        dest="level2_cd",
+        help="Disable corollary feedback in Level 2.",
+    )
+    parser.set_defaults(level2_cd=config_defaults["level2_cd"])
+
+    parser.add_argument(
+        "--audio-instructions",
+        action="store_true",
+        dest="audio_instructions",
+        help="Play audio instructions narrations. Default: true.",
+    )
+    parser.add_argument(
+        "--no-audio-instructions",
+        action="store_false",
+        dest="audio_instructions",
+        help="Disable playing audio instructions narrations.",
+    )
+    parser.set_defaults(audio_instructions=config_defaults["audio_instructions"])
+
+    parser.add_argument(
+        "--show-feedback",
+        action="store_true",
+        dest="show_feedback",
+        help="Show block and practice performance feedback. Default: true.",
+    )
+    parser.add_argument(
+        "--no-show-feedback",
+        action="store_false",
+        dest="show_feedback",
+        help="Disable showing block and practice performance feedback.",
+    )
+    parser.set_defaults(show_feedback=config_defaults["show_feedback"])
+
+    parser.add_argument(
+        "--flip-horizontal",
+        action="store_true",
+        dest="flip_horizontal",
+        help="Flip visual stimuli horizontally for fMRI setup. Default: false.",
+    )
+    parser.add_argument(
+        "--no-flip-horizontal",
+        action="store_false",
+        dest="flip_horizontal",
+        help="Do not flip visual stimuli horizontally.",
+    )
+    parser.set_defaults(flip_horizontal=config_defaults["flip_horizontal"])
+
+    parser.add_argument(
+        "--flip-vertical",
+        action="store_true",
+        dest="flip_vertical",
+        help="Flip visual stimuli vertically. Default: false.",
+    )
+    parser.add_argument(
+        "--no-flip-vertical",
+        action="store_false",
+        dest="flip_vertical",
+        help="Do not flip visual stimuli vertically.",
+    )
+    parser.set_defaults(flip_vertical=config_defaults["flip_vertical"])
     parser.add_argument(
         "--intermix-level-blocks",
         action="store_true",
@@ -425,6 +523,14 @@ EXPERIMENT_CLI_OPTIONS = {
     "--cd-repeats",
     "--cd-repeat-gap",
     "--no-config-dialog",
+    "--audio-instructions",
+    "--no-audio-instructions",
+    "--show-feedback",
+    "--no-show-feedback",
+    "--flip-horizontal",
+    "--no-flip-horizontal",
+    "--flip-vertical",
+    "--no-flip-vertical",
 }
 
 
@@ -489,6 +595,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
         "practice": args.practice,
         "intermix_level_blocks": args.intermix_level_blocks,
         "fullscreen": args.fullscreen,
+        "audio_instructions": args.audio_instructions,
         "skip_instructions": args.skip_instructions,
         "seed_blank_for_random": "" if args.seed is None else str(args.seed),
     }
@@ -506,6 +613,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
             "practice",
             "intermix_level_blocks",
             "fullscreen",
+            "audio_instructions",
             "skip_instructions",
             "seed_blank_for_random",
         ],
@@ -524,6 +632,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
         "paired_tone_offset_max": args.paired_tone_offset_max,
         "cd_schedule": ["by-block", "within-block", "all-immediate", "all-delayed", "all-none"],
         "level2_cd": args.level2_cd,
+        "show_feedback": args.show_feedback,
         "cd_volume": args.cd_volume,
         "cd_repeats": args.cd_repeats,
         "cd_repeat_gap": args.cd_repeat_gap,
@@ -545,6 +654,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
             "paired_tone_offset_max",
             "cd_schedule",
             "level2_cd",
+            "show_feedback",
             "cd_volume",
             "cd_repeats",
             "cd_repeat_gap",
@@ -560,6 +670,8 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
         "right_keys": ",".join(args.right_keys) if isinstance(args.right_keys, list) else args.right_keys,
         "trigger_keys": ",".join(args.trigger_keys) if isinstance(args.trigger_keys, list) else args.trigger_keys,
         "wait_duration_s": args.wait_duration_s,
+        "flip_horizontal": args.flip_horizontal,
+        "flip_vertical": args.flip_vertical,
         "output_dir_blank_for_default": "" if args.output_dir is None else str(args.output_dir),
     }
     show_dialog_page(
@@ -575,6 +687,8 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
             "right_keys",
             "trigger_keys",
             "wait_duration_s",
+            "flip_horizontal",
+            "flip_vertical",
             "output_dir_blank_for_default",
         ],
     )
@@ -603,6 +717,7 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
     args.paired_tone_offset_max = float(dialog_data["paired_tone_offset_max"])
     args.cd_schedule = str(dialog_data["cd_schedule"])
     args.level2_cd = bool(dialog_data["level2_cd"])
+    args.show_feedback = bool(dialog_data["show_feedback"])
     args.cd_volume = float(dialog_data["cd_volume"])
     args.cd_repeats = int(dialog_data["cd_repeats"])
     args.cd_repeat_gap = float(dialog_data["cd_repeat_gap"])
@@ -618,7 +733,10 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
     args.output_dir = Path(output_dir).expanduser() if output_dir else None
     args.intermix_level_blocks = bool(dialog_data["intermix_level_blocks"])
     args.fullscreen = bool(dialog_data["fullscreen"])
+    args.audio_instructions = bool(dialog_data["audio_instructions"])
     args.skip_instructions = bool(dialog_data["skip_instructions"])
+    args.flip_horizontal = bool(dialog_data["flip_horizontal"])
+    args.flip_vertical = bool(dialog_data["flip_vertical"])
     seed_value = str(dialog_data["seed_blank_for_random"]).strip()
     args.seed = int(seed_value) if seed_value else None
     return args
@@ -919,7 +1037,9 @@ def generate_practice(
         trial
         for trial in generate_level_trials(
             level,
-            1,
+            2,  # NOTE: must be >=2 so blocks//2 >= 1 and block_index(1) <= blocks//2,
+                # otherwise reversal_phase always evaluates to "post_reversal" and
+                # Level 2 practice trains the reversed (mismatched) key mapping.
             rng,
             args.category_set,
             args.paired_tone_offset_mode,
@@ -957,12 +1077,23 @@ def wait_for_continue(event) -> None:
 
 def show_image_slide(win, event, visual, sound, image_path: Path, audio_path: Path | None = None) -> None:
     image_path = existing_case_variant(image_path)
-    if audio_path:
-        audio_path = existing_case_variant(audio_path)
     if not image_path.exists():
         return
-    slide = visual.ImageStim(win, image=str(image_path), size=(1.333, 1.0), units="height")
-    audio = sound.Sound(str(audio_path)) if audio_path and audio_path.exists() else None
+    slide = visual.ImageStim(win, image=str(image_path), size=(1.333, 1.0), units="height", **get_flip_params())
+    
+    play_audio = True
+    if CURRENT_ARGS and not CURRENT_ARGS.audio_instructions:
+        play_audio = False
+        
+    audio = None
+    if play_audio and audio_path:
+        audio_path = existing_case_variant(audio_path)
+        if audio_path.exists():
+            try:
+                audio = sound.Sound(str(audio_path))
+            except Exception:
+                audio = None
+                
     if audio:
         audio.play()
     slide.draw()
@@ -980,6 +1111,26 @@ def show_transition_text(win, event, visual, message: str) -> None:
         height=0.04,
         units="height",
         wrapWidth=1.5,
+        **get_flip_params(),
+    )
+    stim.draw()
+    win.flip()
+    wait_for_continue(event)
+
+
+def show_welcome_slide(win, event, visual, level: str, phase: str = "main") -> None:
+    if phase == "practice":
+        text = f"LEVEL - {level} - Practice Session\n\nWelcome To this Level!\n\nPress any button to begin..."
+    else:
+        text = f"LEVEL - {level}\n\nWelcome To this Level!\n\nPress any button to begin..."
+    stim = visual.TextStim(
+        win,
+        text=text,
+        color="white",
+        height=0.06,
+        units="height",
+        wrapWidth=1.5,
+        **get_flip_params(),
     )
     stim.draw()
     win.flip()
@@ -987,8 +1138,6 @@ def show_transition_text(win, event, visual, message: str) -> None:
 
 
 def show_level_instruction(win, event, visual, sound, assets: dict, level: str, phase: str) -> None:
-    message = f"Level {level}"
-    show_transition_text(win, event, visual, message)
     show_image_slide(
         win,
         event,
@@ -1015,13 +1164,13 @@ def make_stimuli(win, visual, assets: dict) -> dict:
     target_size = (0.32, 0.41)
     distractor_size = (0.12, 0.085)
     return {
-        "left_mask": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=(-0.42, 0), size=target_size, units="height"),
-        "right_mask": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=(0.42, 0), size=target_size, units="height"),
-        "fix": visual.ImageStim(win, image=str(assets["fixation"]), pos=(0, 0), size=(0.075, 0.075), units="height"),
-        "top_left_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=(-0.18, 0.34), size=distractor_size, units="height"),
-        "top_right_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=(0.18, 0.34), size=distractor_size, units="height"),
-        "bottom_left_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=(-0.18, -0.34), size=distractor_size, units="height"),
-        "bottom_right_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=(0.18, -0.34), size=distractor_size, units="height"),
+        "left_mask": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((-0.42, 0)), size=target_size, units="height", **get_flip_params()),
+        "right_mask": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((0.42, 0)), size=target_size, units="height", **get_flip_params()),
+        "fix": visual.ImageStim(win, image=str(assets["fixation"]), pos=adjust_pos((0, 0)), size=(0.075, 0.075), units="height", **get_flip_params()),
+        "top_left_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((-0.18, 0.34)), size=distractor_size, units="height", **get_flip_params()),
+        "top_right_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((0.18, 0.34)), size=distractor_size, units="height", **get_flip_params()),
+        "bottom_left_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((-0.18, -0.34)), size=distractor_size, units="height", **get_flip_params()),
+        "bottom_right_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((0.18, -0.34)), size=distractor_size, units="height", **get_flip_params()),
         "target_size": target_size,
     }
 
@@ -1266,13 +1415,14 @@ def run_trial(
         )
 
     target_path = rng.choice(assets["categories"][trial.stimulus_category])
-    target_pos = (-0.42, 0) if trial.target_side == "left" else (0.42, 0)
+    target_pos = adjust_pos((-0.42, 0) if trial.target_side == "left" else (0.42, 0))
     target = visual.ImageStim(
         win,
         image=str(target_path),
         pos=target_pos,
         size=stimuli["target_size"],
         units="height",
+        **get_flip_params(),
     )
     visual_distractor_offset = None
     visual_distractor_onset = None
@@ -1712,9 +1862,9 @@ def show_practice_feedback(
         audio = None
 
     if image_path.exists():
-        image = visual.ImageStim(win, image=str(image_path), pos=(0, 0.14), size=(1.05, 0.78), units="height")
+        image = visual.ImageStim(win, image=str(image_path), pos=adjust_pos((0, 0.14)), size=(1.05, 0.78), units="height", **get_flip_params())
         image.draw()
-    stim = visual.TextStim(win, text=text, pos=(0, -0.34), color="white", height=0.035, units="height")
+    stim = visual.TextStim(win, text=text, pos=adjust_pos((0, -0.34)), color="white", height=0.035, units="height", **get_flip_params())
     stim.draw()
     win.flip()
 
@@ -1748,7 +1898,6 @@ def run_practice_phase(
     exp_clock,
     markers: MarkerSender,
 ) -> int:
-    welcome_shown = False
     for level in levels:
         template_dir = args.resource_root / LEVEL_TEMPLATES[level]
         assets = load_assets(template_dir, args.language)
@@ -1761,16 +1910,7 @@ def run_practice_phase(
                 break
 
             if not args.skip_instructions:
-                if not welcome_shown:
-                    show_image_slide(
-                        win,
-                        event,
-                        visual,
-                        sound,
-                        assets["language"] / "WelcomeLevel1.PNG",
-                        assets["language"] / "WelcomeLevel1.mp3",
-                    )
-                    welcome_shown = True
+                show_welcome_slide(win, event, visual, level, phase="practice")
                 show_level_instruction(win, event, visual, sound, assets, level, "practice")
                 show_image_slide(win, event, visual, sound, assets["language"] / "PracticeStart.PNG", assets["language"] / "PracticeStart.mp3")
 
@@ -1790,14 +1930,16 @@ def run_practice_phase(
                 show_image_slide(win, event, visual, sound, assets["language"] / "PracticeEnd.PNG", assets["language"] / "PracticeEnd.mp3")
 
             # Check if user wants to repeat
-            repeat = show_practice_feedback(
-                win,
-                event,
-                visual,
-                sound,
-                assets["language"],
-                practice_rows,
-            )
+            repeat = False
+            if args.show_feedback:
+                repeat = show_practice_feedback(
+                    win,
+                    event,
+                    visual,
+                    sound,
+                    assets["language"],
+                    practice_rows,
+                )
             if not repeat:
                 break
 
@@ -1818,21 +1960,19 @@ def show_feedback(
     if not active:
         return
     accuracy = sum(int(row["accuracy"]) for row in active) / len(active)
-    correct_rts = [float(row["rt_s"]) for row in active if row["accuracy"] == 1 and row["rt_s"] not in [None, ""]]
-    mean_rt = sum(correct_rts) / len(correct_rts) if correct_rts else None
 
     if accuracy < 0.85:
         feedback = "FeedbackWelltried"
+        message = "Well tried!"
     elif accuracy <= 0.95:
         feedback = "FeedbackGoodjob"
+        message = "Good job!"
     else:
         feedback = "FeedbackOutstanding"
+        message = "Outstanding!"
 
-    text = f"Accuracy: {accuracy * 100:.1f}%"
-    if mean_rt is not None:
-        text += f"\nMean RT: {mean_rt * 1000:.0f} ms"
     progress = 100 * completed_trials / total_trials if total_trials else 0
-    text += f"\nTask completed: {progress:.1f}%"
+    text = f"Task completed: {progress:.1f}%\n\nPress space to continue"
 
     image_path = existing_case_variant(language_dir / f"{feedback}.PNG")
     audio_path = existing_case_variant(language_dir / f"{feedback}.mp3")
@@ -1842,9 +1982,12 @@ def show_feedback(
     else:
         audio = None
     if image_path.exists():
-        image = visual.ImageStim(win, image=str(image_path), pos=(0, 0.14), size=(1.05, 0.78), units="height")
+        image = visual.ImageStim(win, image=str(image_path), pos=adjust_pos((0, 0.14)), size=(1.05, 0.78), units="height", **get_flip_params())
         image.draw()
-    stim = visual.TextStim(win, text=text, pos=(0, -0.34), color="white", height=0.035, units="height")
+    else:
+        fallback = visual.TextStim(win, text=message, pos=adjust_pos((0, 0.14)), color="white", height=0.08, units="height", **get_flip_params())
+        fallback.draw()
+    stim = visual.TextStim(win, text=text, pos=adjust_pos((0, -0.34)), color="white", height=0.035, units="height", **get_flip_params())
     stim.draw()
     win.flip()
     wait_for_continue(event)
@@ -1876,7 +2019,7 @@ def run_main_level(
     total_main_trials = args.blocks * block_trial_count
 
     if not args.skip_instructions:
-        show_image_slide(win, event, visual, sound, assets["language"] / "WelcomeLevel1.PNG", assets["language"] / "WelcomeLevel1.mp3")
+        show_welcome_slide(win, event, visual, level)
         show_level_instruction(win, event, visual, sound, assets, level, "main")
         show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
 
@@ -1913,12 +2056,13 @@ def run_main_level(
         block_rows.append(row)
 
         if trial.trial_in_block == block_trial_count and trial.block % 2 == 0:
-            show_feedback(
-                win, event, visual, sound, assets["language"],
-                block_rows[-2 * block_trial_count:],
-                len(block_rows),
-                total_main_trials,
-            )
+            if args.show_feedback:
+                show_feedback(
+                    win, event, visual, sound, assets["language"],
+                    block_rows[-2 * block_trial_count:],
+                    len(block_rows),
+                    total_main_trials,
+                )
             ready_pending = True
 
         if level == "2" and trial.block == args.blocks // 2 and trial.trial_in_block == block_trial_count:
@@ -1928,6 +2072,7 @@ def run_main_level(
                 color="white",
                 height=0.04,
                 units="height",
+                **get_flip_params(),
             )
             reversal.draw()
             win.flip()
@@ -2000,14 +2145,7 @@ def run_intermixed_main_levels(
         stimuli = stimuli_by_level[level]
         if not args.skip_instructions and level != active_instruction_level:
             if not welcome_shown:
-                show_image_slide(
-                    win,
-                    event,
-                    visual,
-                    sound,
-                    assets["language"] / "WelcomeLevel1.PNG",
-                    assets["language"] / "WelcomeLevel1.mp3",
-                )
+                show_welcome_slide(win, event, visual, level)
                 welcome_shown = True
             show_level_instruction(win, event, visual, sound, assets, level, "main")
             show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
@@ -2038,12 +2176,13 @@ def run_intermixed_main_levels(
                 ready_pending = True
 
         if mixed_block_index % 2 == 0:
-            show_feedback(
-                win, event, visual, sound, assets["language"],
-                recent_rows[-2 * block_trial_count:],
-                len(recent_rows),
-                total_main_trials,
-            )
+            if args.show_feedback:
+                show_feedback(
+                    win, event, visual, sound, assets["language"],
+                    recent_rows[-2 * block_trial_count:],
+                    len(recent_rows),
+                    total_main_trials,
+                )
             ready_pending = True
 
     if not args.skip_instructions and levels:
@@ -2053,10 +2192,12 @@ def run_intermixed_main_levels(
 
 
 def main() -> int:
+    global CURRENT_ARGS
     args = parse_args()
     if not args.used_cli_config and not args.no_config_dialog:
         args = show_config_dialog(args)
         save_config_defaults(args_to_config(args))
+    CURRENT_ARGS = args
     levels = [level.strip() for level in args.levels.split(",") if level.strip()]
     invalid = [level for level in levels if level not in LEVEL_TEMPLATES]
     if invalid:
