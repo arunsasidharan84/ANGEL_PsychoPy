@@ -1,9 +1,9 @@
 {
-  "levels": "1,2",
+  "levels": "2",
   "language": "english",
   "participant": "test",
   "seed": null,
-  "practice": 4,
+  "practice": 6,
   "blocks": 16,
   "fullscreen": true,
   "monitor": "testMonitor",
