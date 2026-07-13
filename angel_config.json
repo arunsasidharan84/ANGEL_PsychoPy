@@ -7,7 +7,7 @@
   "blocks": 16,
   "fullscreen": true,
   "monitor": "testMonitor",
-  "resource_root": "/Users/arunsasidharan/Code/ActiveProjects/ANGEL_PsychoPy/ANGEL_PsychoPy/EPrimeFiles",
+  "resource_root": "EPrimeFiles",
   "skip_instructions": false,
   "category_set": "all",
   "paired_tone_offset_mode": "continuous",
