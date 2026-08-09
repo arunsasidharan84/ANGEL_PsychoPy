@@ -1,0 +1,2 @@
+3.7586 	WARNING 	User requested fullscreen with size [1280  800], but screen is actually [1512, 982]. Using actual size
+5.9015 	ERROR 	Couldn't find image /Users/arunsasidharan/Code/ActiveProjects/ANGEL_PsychoPy/ANGEL_PsychoPy/EPrimeFiles/english/InstructionLevel1.PNG; check path? (tried: /Users/arunsasidharan/Code/ActiveProjects/ANGEL_PsychoPy/ANGEL_PsychoPy/EPrimeFiles/english/InstructionLevel1.PNG)

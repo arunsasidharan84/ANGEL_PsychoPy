@@ -24,14 +24,20 @@ structure:
   corollary discharge conditions.
 - Optional Level 2 (original Level 3) corollary tones with the same CD schedule.
 - Level 2 (original Level 3) meaningful/ambiguous responses with a midpoint rule reversal.
-- Optional EEG/event markers over LSL and/or parallel-port TTL.
+- Optional EEG/event markers over LSL, parallel-port TTL, or Cedrus C-Pod serial.
 - Feedback after every two main blocks, displayed together with score, mean RT,
   progress, image, and audio.
 
 ## Running
 
-Run from PsychoPy's Python environment or from a Python environment where
-`psychopy` is installed:
+The paradigm can be run via Python / Coder script or through PsychoPy Studio / Builder:
+
+### Method 1: PsychoPy Studio / Builder (GUI Interface)
+Researchers can open `angel_paradigm.psyexp` directly in PsychoPy Studio / Builder UI. This provides a visual Flow Chart and Routines (`Welcome`, `Instructions`, `TriggerWait`, `TrialRoutine`, `Feedback`, `End`) to inspect, edit, or customize components while retaining 100% of the underlying Coder paradigm logic and timing precision.
+
+### Method 2: Python / Coder Command Line
+
+Run from PsychoPy's Python environment or from a Python environment where `psychopy` is installed:
 
 ```bash
 python angel_paradigm.py --participant S001 --levels 1,2 --language english
@@ -63,27 +69,12 @@ This file can be edited manually and shared across lab machines/users.
 
 ## Keys
 
-Response keys are configurable in `angel_config.json` via `"left_keys"` and `"right_keys"` or command line parameters `--left-keys` and `--right-keys`. The defaults are:
+Response keys are configurable in `angel_config.json` via `"left_keys"`, `"right_keys"`, `"continue_keys"`, and `"trigger_keys"` or command line parameters. The defaults are:
 - Left response: left arrow, `z`, or `1` (configurable)
 - Right response: right arrow, `/` (slash), or `2` (configurable)
-- Continue: space or return
+- Continue: `any` (any key press advances instruction slides; configurable via `--continue-keys`)
+- Scanner Trigger: `s` (exclusively waited on when `--fmri-mode` is enabled)
 - Quit: escape or `q`
-
-## Notes
-
-The E-Prime (version 3) files are placed within the corresponding Template folders, 
-and represent the original paper version of the paradigm. 
-This Psychopy recreation keeps the logic explicit and has more options for shorter implementation 
-rather than attempting a binary-level translation of the paper. 
-
-The resource images and sounds are shared by Psychopy and EPrime versions, directly from:
-- `EPrimeFiles/CCS_EEG_ANGELv2_Level2_Template`
-- `EPrimeFiles/CCS_EEG_ANGELv2_Level3_Template`
-
-The generated CSV includes condition columns for level, block, active/baseline
-trial, visual category, meaningful/ambiguous class, frequent/rare class, target
-side, visual distractor position, auditory class, tone offset, corollary mode,
-reversal phase, response, RT, and accuracy.
 
 ## Main Options
 
@@ -94,8 +85,11 @@ reversal phase, response, RT, and accuracy.
   preserve category x side balance; face/shape runs allow 4, 8, or 16.
 - `--trials-per-block 25+3|20+3`: active+baseline trials per block. Both keep
   the 80/20 frequent/rare visual oddball proportion.
-- `--stim-duration`, `--response-window`, `--post-mask-min`,
-  `--post-mask-max`: timing controls in seconds.
+- `--screen`: PsychoPy monitor/display screen index (0 for primary, 1 for secondary/extended).
+- `--pre-stim-duration`, `--stim-duration`, `--response-window`: timing controls in seconds.
+- `--trial-duration`, `--inter-trial-jitter`: target trial duration (default 1.50 s) and inter-trial jitter range (default 0.35 s) used to dynamically calculate post-trial masked baseline intervals.
+- `--fmri-mode` / `--no-fmri-mode`: toggle fMRI mode for trigger waiting slide and trigger-relative CSV timestamps.
+- `--flip-horizontal` / `--flip-vertical`: flip visual stimuli horizontally/vertically for fMRI head-mirror setups.
 - `--visual-distractor-mode sync|desync|none`: show visual distractor
   checkerboards with the target, jittered from target onset, or never.
 - `--visual-distractor-offset-min` / `--visual-distractor-offset-max`: visual
@@ -105,25 +99,9 @@ reversal phase, response, RT, and accuracy.
 - `--paired-tone-offset-min` / `--paired-tone-offset-max`: continuous offset
   range in seconds relative to visual onset.
 - `--cd-schedule by-block|within-block|all-immediate|all-delayed|all-none`:
-  Level 1 CD schedule. Trials are logged as `cd_condition=cd_immediate`,
-  `cd_condition=cd_delayed`, or `cd_condition=cd_none`. Except for the explicit
-  `all-none` test mode, `cd_none` is held at 20% of active trials in each block.
-  `by-block` assigns the feedback trials in a block to either immediate or
-  delayed CD; `within-block` randomizes immediate, delayed, and none trials
-  inside every block.
-- `--level2-cd` / `--no-level2-cd`: enable or disable corollary feedback in
-  Level 2.
-- `--left-keys`: comma-separated list of keys for left button response.
-- `--right-keys`: comma-separated list of keys for right button response.
-- `--trigger-keys`: comma-separated trigger keys to start the main task (default: space,s).
-- `--wait-duration-s`: duration of the 'Waiting...' slide in seconds before the first block (default: 11.0).
-- `--cd-volume`, `--cd-repeats`, `--cd-repeat-gap`: tune corollary feedback
-  audibility. The bundled CD WAV is 200 ms long; repeated plays are automatically
-  spaced far enough apart to avoid overlap.
-- `--intermix-level-blocks`: shuffle Level 1 and Level 2 blocks into one
-  combined sequence.
-- `--marker-mode none|lsl|parallel|both`: send markers. LSL uses
-  `--lsl-stream-name`; TTL uses `--parallel-address` and `--ttl-pulse-width`.
+  Level 1 CD schedule.
+- `--level2-cd` / `--no-level2-cd`: enable or disable corollary feedback in Level 2.
+- `--marker-mode none|lsl|parallel|cpod|both`: send markers over LSL, parallel TTL, or Cedrus C-Pod serial.
 - `--output-dir`: custom CSV output folder.
 
 Each output row includes relative and global onset/offset columns for the trial,

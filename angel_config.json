@@ -1,5 +1,5 @@
 {
-  "levels": "2",
+  "levels": "1,2",
   "language": "english",
   "participant": "test",
   "seed": null,
@@ -16,11 +16,15 @@
   "cd_schedule": "by-block",
   "level2_cd": true,
   "intermix_level_blocks": true,
+  "fmri_mode": false,
   "trials_per_block": "25+3",
+  "continue_keys": "any",
+  "screen": 0,
+  "pre_stim_duration": 0.24,
   "stim_duration": 0.24,
   "response_window": 0.7,
-  "post_mask_min": 0.2,
-  "post_mask_max": 0.9,
+  "trial_duration": 1.5,
+  "inter_trial_jitter": 0.35,
   "visual_distractor_mode": "sync",
   "visual_distractor_offset_min": -0.24,
   "visual_distractor_offset_max": 0.24,
@@ -29,6 +33,10 @@
   "lsl_stream_name": "ANGELMarkers",
   "parallel_address": "0x0378",
   "ttl_pulse_width": 0.005,
+  "cpod_pulse_width_ms": 20,
+  "cpod_port": "",
+  "suppress_practice_markers": false,
+  "cd_audio_feedback": true,
   "cd_volume": 0.7,
   "cd_repeats": 1,
   "cd_repeat_gap": 0.25,
@@ -43,8 +51,11 @@
     "2"
   ],
   "trigger_keys": [
-    "space",
     "s"
   ],
-  "wait_duration_s": 11.0
+  "wait_duration_s": 11.0,
+  "audio_instructions": true,
+  "show_feedback": true,
+  "flip_horizontal": false,
+  "flip_vertical": false
 }

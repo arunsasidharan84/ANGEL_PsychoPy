@@ -1,0 +1,6 @@
+﻿thisN,thisTrialN,thisRepN,trials_loop.thisRepN,trials_loop.thisTrialN,trials_loop.thisN,trials_loop.thisIndex,thisRow.t,notes,piloting,Init.started,Init.stopped,Welcome.started,welcome_text.started,welcome_key.started,Welcome.stopped,Instructions.started,instruction_image.started,instruction_key.started,Instructions.stopped,TriggerWait.started,TriggerWait.stopped,participant,session,date,expName,expVersion,psychopyVersion,frameRate,expStart,
+,,,,,,,,,False,0.009034457965753973,0.009101208008360118,,,,,,,,,,,test,001,2026-07-31_15h33.48.053,angel_paradigm_builder,,2026.1.3,120.70898423540255,2026-07-31 15h33.48.184376 +0530,
+,,,,,,,,,,,,0.009113874984905124,0.0672997499932535,0.0672997499932535,5.6043258329737,,,,,,,test,001,2026-07-31_15h33.48.053,angel_paradigm_builder,,2026.1.3,120.70898423540255,2026-07-31 15h33.48.184376 +0530,
+,,,,,,,,,,,,,,,,5.60435341700213,5.658986082999036,5.658986082999036,12.152123374980874,,,test,001,2026-07-31_15h33.48.053,angel_paradigm_builder,,2026.1.3,120.70898423540255,2026-07-31 15h33.48.184376 +0530,
+,,,,,,,,,,,,,,,,,,,,12.152143582992721,12.152156625001226,test,001,2026-07-31_15h33.48.053,angel_paradigm_builder,,2026.1.3,120.70898423540255,2026-07-31 15h33.48.184376 +0530,
+0,0,0,0,0,0,0,,,,,,,,,,,,,,,,,,,,,,,,
