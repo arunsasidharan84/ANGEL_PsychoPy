@@ -89,6 +89,83 @@ CATEGORY_SETS = {
 BLOCK_CHOICES = [16, 8, 4]
 TRIALS_PER_BLOCK_CHOICES = ["25+3", "20+3"]
 
+DEFAULT_TRIGGER_CODES = {
+    # Session & Block Boundaries
+    "block_start": 1,
+    "trial_start": 10,
+    "baseline_start": 11,
+    "trial_end": 90,
+    "experiment_end": 99,
+    "instruction_start": 101,
+    "instruction_end": 102,
+    "practice_start": 103,
+    "practice_end": 104,
+    "trigger_wait_start": 105,
+    "trigger_received": 106,
+    "feedback_start": 107,
+    "feedback_end": 108,
+    "reversal_rule_start": 109,
+    "reversal_rule_end": 110,
+
+    # Auditory Distractor Tones
+    "paired_standard": 20,
+    "paired_deviant": 21,
+
+    # Visual Targets (General)
+    "visual_frequent": 30,
+    "visual_rare": 31,
+    "visual_offset": 32,
+
+    # Visual Targets (Hemifield specific - vital for N170/P1/LRP)
+    "visual_frequent_left": 33,
+    "visual_frequent_right": 34,
+    "visual_rare_left": 35,
+    "visual_rare_right": 36,
+
+    # Participant Responses
+    "response_left": 40,
+    "response_right": 41,
+    "response_miss": 42,
+
+    # Corollary Discharge Feedback
+    "cd_immediate": 50,
+    "cd_delayed": 51,
+    "cd_none": 52,
+}
+
+TRIGGER_CODE_METADATA = {
+    "block_start": {"category": "Boundary", "description": "Start of an experimental block"},
+    "trial_start": {"category": "Boundary", "description": "Onset of a trial epoch (fixation onset)"},
+    "baseline_start": {"category": "Boundary", "description": "Start of baseline/rest trial"},
+    "trial_end": {"category": "Boundary", "description": "End of trial epoch"},
+    "experiment_end": {"category": "Boundary", "description": "Session completed slide"},
+    "instruction_start": {"category": "Slide", "description": "Instruction slide presented"},
+    "instruction_end": {"category": "Slide", "description": "Instruction slide dismissed"},
+    "practice_start": {"category": "Boundary", "description": "Practice block started"},
+    "practice_end": {"category": "Boundary", "description": "Practice block completed"},
+    "trigger_wait_start": {"category": "Scanner", "description": "Waiting for scanner trigger"},
+    "trigger_received": {"category": "Scanner", "description": "Scanner trigger pulse received"},
+    "feedback_start": {"category": "Slide", "description": "Block performance feedback slide presented"},
+    "feedback_end": {"category": "Slide", "description": "Feedback slide dismissed"},
+    "reversal_rule_start": {"category": "Slide", "description": "Level 2 midpoint rule reversal instruction slide"},
+    "reversal_rule_end": {"category": "Slide", "description": "Level 2 rule reversal slide dismissed"},
+    "paired_standard": {"category": "Auditory", "description": "Auditory distractor standard tone (800 Hz)"},
+    "paired_deviant": {"category": "Auditory", "description": "Auditory distractor deviant tone (500 Hz)"},
+    "visual_frequent": {"category": "Visual", "description": "Frequent visual target stimulus (80%)"},
+    "visual_rare": {"category": "Visual", "description": "Rare visual oddball stimulus (20%)"},
+    "visual_offset": {"category": "Visual", "description": "Offset of visual target stimulus"},
+    "visual_frequent_left": {"category": "Visual", "description": "Frequent visual target on left hemifield"},
+    "visual_frequent_right": {"category": "Visual", "description": "Frequent visual target on right hemifield"},
+    "visual_rare_left": {"category": "Visual", "description": "Rare visual target on left hemifield"},
+    "visual_rare_right": {"category": "Visual", "description": "Rare visual target on right hemifield"},
+    "response_left": {"category": "Response", "description": "Participant left key response"},
+    "response_right": {"category": "Response", "description": "Participant right key response"},
+    "response_miss": {"category": "Response", "description": "Trial omission / no response within response window"},
+    "cd_immediate": {"category": "Corollary", "description": "Corollary discharge immediate tone (50 ms)"},
+    "cd_delayed": {"category": "Corollary", "description": "Corollary discharge delayed tone (250 ms)"},
+    "cd_none": {"category": "Corollary", "description": "Corollary discharge condition without tone feedback"},
+}
+
 CONFIG_DEFAULTS = {
     "levels": "1,2",
     "language": "english",
@@ -145,6 +222,7 @@ CONFIG_DEFAULTS = {
     "feedback_show_accuracy": True,
     "flip_horizontal": False,
     "flip_vertical": False,
+    "trigger_codes": dict(DEFAULT_TRIGGER_CODES),
 }
 
 KEYS = {
@@ -686,12 +764,47 @@ def parse_args() -> argparse.Namespace:
         default=config_defaults["wait_duration_s"],
         help="Duration of the 'Waiting...' slide in seconds. Default: 11.0.",
     )
+    parser.add_argument(
+        "--trigger-codes",
+        default=None,
+        help="Path to a custom trigger codes JSON file or inline JSON string to override codes.",
+    )
+    parser.add_argument(
+        "--export-trigger-codes",
+        default=None,
+        help="Export current trigger codes to the specified JSON file and exit.",
+    )
     args, _unknown = parser.parse_known_args()
     args.used_cli_config = any(
         arg == option or arg.startswith(f"{option}=")
         for arg in sys.argv[1:]
         for option in EXPERIMENT_CLI_OPTIONS
     )
+    active_codes = dict(config_defaults.get("trigger_codes", DEFAULT_TRIGGER_CODES))
+    if getattr(args, "trigger_codes", None):
+        tc_arg = str(args.trigger_codes).strip()
+        tc_p = Path(tc_arg)
+        if tc_p.exists() and tc_p.is_file():
+            try:
+                with tc_p.open("r", encoding="utf-8") as f:
+                    loaded_tc = json.load(f)
+                    if "event_id" in loaded_tc:
+                        loaded_tc = loaded_tc["event_id"]
+                    elif "trigger_codes" in loaded_tc:
+                        loaded_tc = loaded_tc["trigger_codes"]
+                    for k, v in loaded_tc.items():
+                        active_codes[str(k)] = int(v)
+            except Exception as exc:
+                print(f"WARNING: Could not load trigger codes from {tc_p}: {exc}", file=sys.stderr)
+        else:
+            try:
+                loaded_tc = json.loads(tc_arg)
+                if isinstance(loaded_tc, dict):
+                    for k, v in loaded_tc.items():
+                        active_codes[str(k)] = int(v)
+            except Exception as exc:
+                print(f"WARNING: Could not parse --trigger-codes inline JSON: {exc}", file=sys.stderr)
+    args.trigger_codes = active_codes
     return args
 
 
@@ -718,6 +831,8 @@ EXPERIMENT_CLI_OPTIONS = {
     "--right-keys",
     "--trigger-keys",
     "--wait-duration-s",
+    "--trigger-codes",
+    "--export-trigger-codes",
     "--intermix-level-blocks",
     "--trials-per-block",
     "--stim-duration",
@@ -759,20 +874,24 @@ def load_config_defaults() -> dict:
         return dict(CONFIG_DEFAULTS)
 
     config = dict(CONFIG_DEFAULTS)
-    # "levels" is excluded here because it gets its own multi-token-aware
-    # recovery below; running it through the generic single-value _dlg_scalar
-    # first would collapse a multi-level selection like "1,2" down to just
-    # its first token before that recovery ever sees the original value.
-    skip_generic_unwrap = {"left_keys", "right_keys", "trigger_keys", "levels"}
+    skip_generic_unwrap = {"left_keys", "right_keys", "trigger_keys", "levels", "trigger_codes"}
     for key, value in loaded.items():
         if key not in CONFIG_DEFAULTS:
             continue
-        # Self-heal values corrupted by older-PsychoPy dialog quirks (see
-        # _dlg_scalar): e.g. a "blocks" entry saved as a stray one-item
-        # list, or as the str() of a Python list.
         if key not in skip_generic_unwrap:
             value = _dlg_scalar(value)
         config[key] = value
+
+    if "trigger_codes" in loaded and isinstance(loaded["trigger_codes"], dict):
+        merged = dict(DEFAULT_TRIGGER_CODES)
+        for k, v in loaded["trigger_codes"].items():
+            try:
+                merged[str(k)] = int(v)
+            except (ValueError, TypeError):
+                pass
+        config["trigger_codes"] = merged
+    else:
+        config["trigger_codes"] = dict(DEFAULT_TRIGGER_CODES)
 
     # "levels" specifically supports "1", "2", or "1,2" -- rebuild it from
     # whatever tokens are recoverable so a badly corrupted value (e.g.
@@ -885,6 +1004,7 @@ def _show_qt_config_dialog(args: argparse.Namespace) -> argparse.Namespace | Non
             self._build_tab_run()
             self._build_tab_timing()
             self._build_tab_io()
+            self._build_tab_trigger_codes()
 
             # Connect listeners for instant live fMRI volume autocalculation
             for widget in [self.cb_levels, self.cb_blocks, self.cb_trials_per_block, self.cb_feedback_freq]:
@@ -1166,6 +1286,102 @@ def _show_qt_config_dialog(args: argparse.Namespace) -> argparse.Namespace | Non
 
             self.tabs.addTab(tab, "🔌 EEG, fMRI & Hardware")
 
+        def _build_tab_trigger_codes(self):
+            tab = QtWidgets.QWidget()
+            layout = QtWidgets.QVBoxLayout(tab)
+            layout.setContentsMargins(14, 14, 14, 14)
+            layout.setSpacing(10)
+
+            info_label = QtWidgets.QLabel(
+                "Hardware marker trigger codes (0–255). Changes are saved to angel_config.json "
+                "and automatically exported as a companion JSON file for ERP analysis."
+            )
+            info_label.setWordWrap(True)
+            info_label.setStyleSheet("color: #424242; font-size: 11px;")
+            layout.addWidget(info_label)
+
+            self.table_triggers = QtWidgets.QTableWidget()
+            self.table_triggers.setColumnCount(4)
+            self.table_triggers.setHorizontalHeaderLabels(["Event Label", "Code (0-255)", "Category", "Description"])
+            self.table_triggers.horizontalHeader().setStretchLastSection(True)
+            self.table_triggers.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+            self.table_triggers.setAlternatingRowColors(True)
+
+            current_codes = getattr(self.args, "trigger_codes", {}) or DEFAULT_TRIGGER_CODES
+            self.code_spinboxes = {}
+
+            self.table_triggers.setRowCount(len(DEFAULT_TRIGGER_CODES))
+            for row, (label, default_code) in enumerate(DEFAULT_TRIGGER_CODES.items()):
+                code_val = int(current_codes.get(label, default_code))
+                meta = TRIGGER_CODE_METADATA.get(label, {})
+                cat = meta.get("category", "General")
+                desc = meta.get("description", label)
+
+                item_label = QtWidgets.QTableWidgetItem(label)
+                item_label.setFlags(item_label.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+
+                sb = QtWidgets.QSpinBox()
+                sb.setRange(0, 255)
+                sb.setValue(code_val)
+                self.code_spinboxes[label] = sb
+
+                item_cat = QtWidgets.QTableWidgetItem(cat)
+                item_cat.setFlags(item_cat.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+
+                item_desc = QtWidgets.QTableWidgetItem(desc)
+                item_desc.setFlags(item_desc.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+
+                self.table_triggers.setItem(row, 0, item_label)
+                self.table_triggers.setCellWidget(row, 1, sb)
+                self.table_triggers.setItem(row, 2, item_cat)
+                self.table_triggers.setItem(row, 3, item_desc)
+
+            self.table_triggers.setColumnWidth(0, 160)
+            self.table_triggers.setColumnWidth(1, 95)
+            self.table_triggers.setColumnWidth(2, 95)
+            layout.addWidget(self.table_triggers)
+
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_reset = QtWidgets.QPushButton("Reset Codes to Defaults")
+            btn_reset.clicked.connect(self._reset_trigger_codes)
+            btn_row.addWidget(btn_reset)
+
+            btn_export = QtWidgets.QPushButton("Export Trigger Codes JSON...")
+            btn_export.clicked.connect(self._export_trigger_codes_dialog)
+            btn_row.addWidget(btn_export)
+
+            btn_row.addStretch()
+            layout.addLayout(btn_row)
+
+            self.tabs.addTab(tab, "🏷️ Trigger Codes")
+
+        def _reset_trigger_codes(self):
+            for label, default_code in DEFAULT_TRIGGER_CODES.items():
+                if label in self.code_spinboxes:
+                    self.code_spinboxes[label].setValue(default_code)
+
+        def _get_active_trigger_codes(self) -> dict[str, int]:
+            return {
+                label: sb.value()
+                for label, sb in self.code_spinboxes.items()
+            }
+
+        def _export_trigger_codes_dialog(self):
+            codes = self._get_active_trigger_codes()
+            default_path = str(ROOT / "data" / "angel_trigger_codes.json")
+            out_file, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, "Export Trigger Codes JSON", default_path, "JSON Files (*.json)"
+            )
+            if out_file:
+                path = Path(out_file)
+                sender = MarkerSender(self.args, None, None)
+                sender.codes = codes
+                p_text = self.ed_participant.text().strip() if hasattr(self, "ed_participant") else ""
+                sender.save_trigger_codes_json(path, participant=p_text or "test")
+                QtWidgets.QMessageBox.information(
+                    self, "Export Successful", f"Trigger codes successfully saved to:\n{path}"
+                )
+
         def _update_fmri_calc(self):
             import math
             levels_count = 2 if "1,2" in str(self.cb_levels.currentData()) else 1
@@ -1255,6 +1471,7 @@ def _show_qt_config_dialog(args: argparse.Namespace) -> argparse.Namespace | Non
             self.args.trigger_keys = _parse_keys(self.ed_trigger_keys.text())
             self.args.continue_keys = _parse_keys(self.ed_continue_keys.text())
             self.args.screen = self.sb_screen.value()
+            self.args.trigger_codes = self._get_active_trigger_codes()
 
             self.accept()
 
@@ -2156,34 +2373,7 @@ def find_cpod(port: str | None = None):
 
 
 class MarkerSender:
-    CODES = {
-        "block_start": 1,
-        "trial_start": 10,
-        "baseline_start": 11,
-        "paired_standard": 20,
-        "paired_deviant": 21,
-        "visual_frequent": 30,
-        "visual_rare": 31,
-        "visual_offset": 32,
-        "response_left": 40,
-        "response_right": 41,
-        "response_miss": 42,
-        "cd_immediate": 50,
-        "cd_delayed": 51,
-        "cd_none": 52,
-        "trial_end": 90,
-        "instruction_start": 101,
-        "instruction_end": 102,
-        "practice_start": 103,
-        "practice_end": 104,
-        "trigger_wait_start": 105,
-        "trigger_received": 106,
-        "feedback_start": 107,
-        "feedback_end": 108,
-        "reversal_rule_start": 109,
-        "reversal_rule_end": 110,
-        "experiment_end": 99,
-    }
+    CODES = dict(DEFAULT_TRIGGER_CODES)
 
     def __init__(self, args: argparse.Namespace, core, exp_clock) -> None:
         self.args = args
@@ -2193,6 +2383,24 @@ class MarkerSender:
         self.port = None
         self.cpod = None
         self.log: list[dict] = []
+
+        self.codes = dict(DEFAULT_TRIGGER_CODES)
+        custom_codes = getattr(args, "trigger_codes", None)
+        if isinstance(custom_codes, dict):
+            for k, v in custom_codes.items():
+                try:
+                    self.codes[str(k)] = int(v)
+                except (ValueError, TypeError):
+                    pass
+        elif isinstance(custom_codes, str):
+            try:
+                parsed = json.loads(custom_codes)
+                if isinstance(parsed, dict):
+                    for k, v in parsed.items():
+                        self.codes[str(k)] = int(v)
+            except Exception:
+                pass
+        self.CODES = self.codes
 
         if args.marker_mode in ["lsl", "both"]:
             try:
@@ -2248,6 +2456,44 @@ class MarkerSender:
             except Exception as exc:
                 print(f"WARNING: Error closing C-Pod: {exc}", file=sys.stderr)
 
+    def _generate_mne_event_id(self) -> dict[str, int]:
+        mne_map = {}
+        for label, code in self.codes.items():
+            slash_label = label.replace("_", "/")
+            mne_map[slash_label] = code
+        return mne_map
+
+    def save_trigger_codes_json(self, path: Path, participant: str = "") -> None:
+        """Write a clean, MNE/EEGLAB-ready JSON dictionary mapping trigger codes to events for ERP analysis."""
+        from datetime import datetime
+        data = {
+            "paradigm": "ANGEL_PsychoPy",
+            "participant": participant,
+            "export_time": datetime.now().isoformat(),
+            "event_id": dict(self.codes),
+            "codes_to_labels": {str(v): k for k, v in self.codes.items()},
+            "mne_event_id": self._generate_mne_event_id(),
+            "descriptions": {
+                k: TRIGGER_CODE_METADATA.get(k, {}).get("description", k)
+                for k in self.codes
+            },
+            "trigger_metadata": {
+                k: {
+                    "code": v,
+                    "category": TRIGGER_CODE_METADATA.get(k, {}).get("category", "General"),
+                    "description": TRIGGER_CODE_METADATA.get(k, {}).get("description", k),
+                }
+                for k, v in self.codes.items()
+            }
+        }
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            print(f"Trigger codes JSON written to {path}")
+        except Exception as exc:
+            print(f"WARNING: Could not write trigger codes JSON: {exc}", file=sys.stderr)
+
     def save_log(self, path: Path) -> None:
         """Write every marker sent this session to a CSV file (index, timestamp, label, code).
 
@@ -2280,8 +2526,8 @@ class MarkerSender:
             print(f"WARNING: Could not write marker log: {exc}", file=sys.stderr)
 
     def send(self, label: str, code: int | None = None) -> float:
-        marker_code = self.CODES.get(label, 0) if code is None else code
-        timestamp = self.exp_clock.getTime()
+        marker_code = self.codes.get(label, 0) if code is None else code
+        timestamp = self.exp_clock.getTime() if self.exp_clock is not None else 0.0
         sample = f"{marker_code}:{label}"
 
         if self.outlet is not None:
@@ -2555,9 +2801,12 @@ def run_trial(
     draw_trial_frame(stimuli, target, trial.visual_distractor_pos, show_sync_distractor or show_desync_at_visual)
     win.flip()
     distractor_visible = show_sync_distractor or show_desync_at_visual
-    visual_onset = trial_clock.getTime()
-    visual_onset_global = exp_clock.getTime()
-    send_marker(f"visual_{trial.frequency_class}")
+    visual_label = f"visual_{trial.frequency_class}"
+    side_label = f"visual_{trial.frequency_class}_{trial.target_side}" if trial.target_side else None
+    if side_label and side_label in getattr(markers, "codes", {}):
+        send_marker(side_label)
+    else:
+        send_marker(visual_label)
     if show_sync_distractor:
         visual_distractor_onset = visual_onset
         visual_distractor_onset_global = visual_onset_global
@@ -3411,6 +3660,13 @@ def run_intermixed_main_levels(
 def main() -> int:
     global CURRENT_ARGS
     args = parse_args()
+    if getattr(args, "export_trigger_codes", None):
+        out_p = Path(args.export_trigger_codes)
+        ms = MarkerSender(args, None, None)
+        ms.save_trigger_codes_json(out_p, participant=getattr(args, "participant", "test"))
+        print(f"Trigger codes successfully exported to {out_p}")
+        return 0
+
     if not args.used_cli_config and not args.no_config_dialog:
         args = show_config_dialog(args)
         save_config_defaults(args_to_config(args))
@@ -3533,6 +3789,12 @@ def main() -> int:
     finally:
         marker_log_path = output_path.with_name(output_path.stem + "_markers.csv")
         markers.save_log(marker_log_path)
+        trig_json_path = output_path.with_name(output_path.stem + "_trigger_codes.json")
+        markers.save_trigger_codes_json(trig_json_path, participant=args.participant)
+        try:
+            markers.save_trigger_codes_json(output_path.parent / "angel_trigger_codes.json", participant=args.participant)
+        except Exception:
+            pass
         if args.fmri_mode and getattr(args, "trigger_onset_global", None) is not None:
             fmri_events_path = output_path.with_name(output_path.stem + "_fmri_events.csv")
             try:

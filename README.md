@@ -93,26 +93,26 @@ Each trial follows microsecond-precise display refresh synchronization:
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Display as Visual Display
-    participant Audio as Sound Output
-    participant Participant as Participant
-    participant Hardware as EEG / fMRI Trigger
+    actor Sub as Participant
+    participant Disp as Visual Display
+    participant Aud as Sound Output
+    participant Trig as EEG / fMRI Trigger
 
-    Note over Display: Fixation Cross (Pre-stimulus jitter: 350-500 ms)
-    Display->>Hardware: Send Fixation Marker
-    Note over Display,Audio: Target Stimulus Onset (100 ms)
-    Display->>Hardware: Send Stimulus Marker (1-24)
+    Note over Disp: Fixation Cross (Pre-stimulus jitter: 350-500 ms)
+    Disp->>Trig: Send Fixation Marker (10)
+    Note over Disp,Aud: Target Stimulus Onset (100 ms)
+    Disp->>Trig: Send Stimulus Marker (30-36)
     opt Auditory Distractor (80% Standard / 20% Deviant)
-        Audio->>Hardware: Sound Onset Marker (Programmatic Continuous Offset)
+        Aud->>Trig: Sound Onset Marker (20 / 21)
     end
-    Note over Display: Checkerboard Mask (Response Window: 1000 ms)
-    Participant->>Hardware: Key Press / Button Box (Left or Right)
-    Hardware->>Hardware: Send Response Marker (51 / 52)
+    Note over Disp: Checkerboard Mask (Response Window: 1000 ms)
+    Sub->>Trig: Key Press / Button Box (Left or Right)
+    Trig->>Trig: Send Response Marker (40 / 41)
     opt Corollary Discharge Active
-        Audio->>Hardware: Contingent Tone (Immediate 50ms / Delayed 250ms)
+        Aud->>Trig: Contingent Tone (Immediate 50ms / Delayed 250ms)
     end
-    Note over Display: Post-Trial Masked Baseline (Variable Jitter: 1100-1450 ms)
-    Note over Display: Total Trial Duration: Fixed Epoch (e.g., 1500 ms target)
+    Note over Disp: Post-Trial Masked Baseline (Variable Jitter: 1100-1450 ms)
+    Note over Disp: Total Trial Duration: Fixed Epoch (e.g., 1500 ms target)
 ```
 
 1. **Pre-stimulus Fixation**: Central cross (`plus.png`) for 350–500 ms.
@@ -148,26 +148,88 @@ onset,duration,trial_type,stim_category,stim_side,response_time,accuracy
 ```
 All onsets are accurately time-locked ($t = 0.000\,\text{s}$) to the initial scanner trigger.
 
-### 3. EEG Hardware Triggers & Codes
-Markers are sent simultaneously via **Lab Streaming Layer (LSL)**, **Parallel Port TTL**, or **Cedrus C-Pod USB Serial**:
+### 3. Definable EEG Hardware Trigger Codes & Automated JSON Export
 
-| Trigger Code | Event Description |
-| :---: | :--- |
-| **99 / 107** | fMRI Scanner Trigger Received |
-| **101** | Experiment Session Start |
-| **102 / 103** | Instruction Slide Start / End |
-| **104 / 105** | Practice Block Start / End |
-| **106** | Waiting for Scanner Trigger |
-| **108 / 109** | Main Block Start / End |
-| **110** | Experiment End Slide |
-| **1 – 8** | Level 1 Visual Stimuli (Side × Category combinations) |
-| **9 – 16** | Level 2 Visual Stimuli (Rule Phase 1 & 2 combinations) |
-| **25 / 26** | Visual Baseline / Rest Intervals |
-| **31 – 46** | Practice Trial Stimuli |
-| **51 / 52** | Participant Left / Right Button Press |
-| **61 – 63** | Corollary Feedback Tones (Immediate, Delayed, Audio) |
+ANGEL sends high-precision hardware triggers over **Lab Streaming Layer (LSL)**, **Parallel Port TTL**, or **Cedrus C-Pod USB Serial**.
 
-Every session generates an exhaustive marker audit file (`*_markers.csv`) recording hardware marker codes, global timestamps, and trigger-relative timestamps.
+#### A. Definable & Customizable Codes
+Researchers can configure trigger codes (0–255) through three flexible mechanisms:
+1. **Interactive GUI Dialog**: The dedicated **🏷️ Trigger Codes** tab displays an editable table with spinboxes for every marker, allowing instant customization, a "Reset to Defaults" button, and an immediate "Export JSON Now..." button.
+2. **Persistent Configuration (`angel_config.json`)**: Edit the `"trigger_codes"` dictionary in `angel_config.json` to persist custom codes across experiments.
+3. **Command Line & Custom Files**: Override codes dynamically via `--trigger-codes custom_codes.json` or inline `--trigger-codes '{"visual_frequent": 30}'`, or export the dictionary without running via `--export-trigger-codes my_codes.json`.
+
+#### B. Automated Companion JSON Export for ERP Analysis
+At the end of every experimental session, ANGEL exports a companion JSON file alongside the marker log:
+`data/<participant>_<timestamp>_trigger_codes.json` (as well as `data/angel_trigger_codes.json`).
+
+The exported JSON is formatted specifically for direct ingestion by ERP analysis tools (**MNE-Python**, **EEGLAB**, **FieldTrip**, and **Brainstorm**):
+- `event_id`: `{ "event_label": code }` dictionary for standard epoching.
+- `codes_to_labels`: Reverse lookup mapping each numeric code back to its event name.
+- `mne_event_id`: Hierarchical slash-delimited notation (e.g. `"visual/frequent/left": 33`, `"paired/deviant": 21`, `"response/left": 40`), enabling MNE hierarchical event querying.
+- `descriptions` & `trigger_metadata`: Human-readable descriptions and category tags.
+
+#### C. Python / MNE-Python ERP Analysis Example
+```python
+import json
+import mne
+
+# 1. Load the session-specific trigger definitions exported by ANGEL
+with open("data/S001_20261003_trigger_codes.json", "r") as f:
+    trig_dict = json.load(f)
+
+event_id = trig_dict["mne_event_id"]
+
+# 2. Load EEG recording and extract events
+raw = mne.io.read_raw_fif("sub-01_eeg.fif", preload=True)
+events, _ = mne.events_from_annotations(raw)
+
+# 3. Create epochs with hierarchical condition querying
+epochs = mne.Epochs(raw, events, event_id=event_id, tmin=-0.2, tmax=0.8, baseline=(-0.2, 0), preload=True)
+
+# 4. Compute and compare ERPs effortlessly:
+# Visual P300 Oddball difference (Rare - Frequent):
+p300_diff = epochs["visual/rare"].average() - epochs["visual/frequent"].average()
+
+# Auditory MMN (Deviant - Standard):
+mmn_diff = epochs["paired/deviant"].average() - epochs["paired/standard"].average()
+
+# Lateralized Readiness Potential (LRP) for Motor Execution:
+lrp_left = epochs["response/left"].average()
+lrp_right = epochs["response/right"].average()
+```
+
+#### D. Predefined Trigger Codes Reference Table
+
+| Code | Event Label | Category | Description |
+| :---: | :--- | :--- | :--- |
+| **1** | `block_start` | Boundary | Start of an experimental block |
+| **10** | `trial_start` | Boundary | Onset of a trial epoch (fixation onset) |
+| **11** | `baseline_start` | Boundary | Start of baseline/rest trial |
+| **20** | `paired_standard` | Auditory | Auditory distractor standard tone (800 Hz) |
+| **21** | `paired_deviant` | Auditory | Auditory distractor deviant tone (500 Hz) |
+| **30** | `visual_frequent` | Visual | Frequent visual target stimulus (80%) |
+| **31** | `visual_rare` | Visual | Rare visual oddball stimulus (20%) |
+| **32** | `visual_offset` | Visual | Offset of visual target stimulus |
+| **33** | `visual_frequent_left` | Visual | Frequent visual target on left hemifield |
+| **34** | `visual_frequent_right` | Visual | Frequent visual target on right hemifield |
+| **35** | `visual_rare_left` | Visual | Rare visual target on left hemifield |
+| **36** | `visual_rare_right` | Visual | Rare visual target on right hemifield |
+| **40** | `response_left` | Response | Participant left key response |
+| **41** | `response_right` | Response | Participant right key response |
+| **42** | `response_miss` | Response | Trial omission / no response within window |
+| **50** | `cd_immediate` | Corollary | Corollary discharge immediate tone (50 ms) |
+| **51** | `cd_delayed` | Corollary | Corollary discharge delayed tone (250 ms) |
+| **52** | `cd_none` | Corollary | Corollary discharge without tone feedback |
+| **90** | `trial_end` | Boundary | End of trial epoch |
+| **99** | `experiment_end` | Boundary | Session completed slide |
+| **101 / 102** | `instruction_start` / `_end` | Slide | Instruction slide presented / dismissed |
+| **103 / 104** | `practice_start` / `_end` | Boundary | Practice block started / completed |
+| **105** | `trigger_wait_start` | Scanner | Waiting for scanner trigger |
+| **106** | `trigger_received` | Scanner | Scanner trigger pulse received ($t=0.000\,\text{s}$) |
+| **107 / 108** | `feedback_start` / `_end` | Slide | Block performance feedback presented / dismissed |
+| **109 / 110** | `reversal_rule_start` / `_end` | Slide | Level 2 rule reversal slide presented / dismissed |
+
+Every session generates both a high-resolution timestamped marker audit file (`*_markers.csv`) and the companion ERP definitions file (`*_trigger_codes.json`).
 
 ---
 

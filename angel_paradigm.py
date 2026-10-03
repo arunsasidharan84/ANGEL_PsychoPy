@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 This experiment was created using PsychoPy3 Experiment Builder (v2026.1.3),
-    on Sat Oct  3 15:31:13 2026
+    on Sat Oct  3 16:49:10 2026
 If you publish work using this script the most relevant publication is:
 
     Peirce J, Gray JR, Simpson S, MacAskill M, Höchenberger R, Sogo H, Kastman E, Lindeløv JK. (2019) 
@@ -33,9 +33,19 @@ import sys  # to get file system encoding
 from psychopy.hardware import keyboard
 
 # Run 'Before Experiment' code from init_code
+import sys
+from pathlib import Path
 import angel_paradigm_coder as engine
 args = engine.parse_args()
-args = engine.show_config_dialog(args)
+if getattr(args, 'export_trigger_codes', None):
+    out_p = Path(args.export_trigger_codes)
+    ms = engine.MarkerSender(args, None, None)
+    ms.save_trigger_codes_json(out_p, participant=getattr(args, 'participant', 'test'))
+    print(f'Trigger codes successfully exported to {out_p}')
+    sys.exit(0)
+if not args.used_cli_config and not getattr(args, 'no_config_dialog', False):
+    args = engine.show_config_dialog(args)
+    engine.save_config_defaults(engine.args_to_config(args))
 engine.CURRENT_ARGS = args
 
 # --- Setup global variables (available in all functions) ---
@@ -138,7 +148,7 @@ def setupData(expInfo, dataDir=None):
     thisExp = data.ExperimentHandler(
         name=expName, version=expVersion,
         extraInfo=expInfo, runtimeInfo=None,
-        originPath='/Users/arunsasidharan/Code/ActiveProjects/ANGEL_PsychoPy/angel_paradigm.py',
+        originPath='angel_paradigm.py',
         savePickle=True, saveWideText=True,
         dataFileName=dataDir + os.sep + filename, sortColumns='time'
     )
@@ -1174,14 +1184,21 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         # Level Session Summary (only if show_feedback is True)
         if getattr(args, 'show_feedback', True):
             engine.show_session_summary(win, event, visual, sound, assets['language'], block_rows, label=f'Level {level} Session')
-    # Export fMRI Events CSV and Marker Log if in fMRI mode
-    if getattr(args, 'fmri_mode', False) and getattr(args, 'trigger_onset_global', None) is not None:
-        from pathlib import Path
+    # Export fMRI Events CSV, Marker Log, and Trigger Codes JSON
+    from pathlib import Path
+    if hasattr(thisExp, 'dataFileName') and thisExp.dataFileName:
         csv_p = Path(thisExp.dataFileName + '.csv')
-        events_p = csv_p.with_name(csv_p.stem + '_fmri_events.csv')
-        engine.save_fmri_events(events_p, main_session_rows, args.trigger_onset_global)
         markers_p = csv_p.with_name(csv_p.stem + '_markers.csv')
         markers.save_log(markers_p)
+        trig_json_p = csv_p.with_name(csv_p.stem + '_trigger_codes.json')
+        markers.save_trigger_codes_json(trig_json_p, participant=getattr(args, 'participant', ''))
+        try:
+            markers.save_trigger_codes_json(csv_p.parent / 'angel_trigger_codes.json', participant=getattr(args, 'participant', ''))
+        except Exception:
+            pass
+        if getattr(args, 'fmri_mode', False) and getattr(args, 'trigger_onset_global', None) is not None:
+            events_p = csv_p.with_name(csv_p.stem + '_fmri_events.csv')
+            engine.save_fmri_events(events_p, main_session_rows, args.trigger_onset_global)
     continueRoutine = False
     
     # store start times for TrialRoutine
