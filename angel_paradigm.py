@@ -1,8 +1,8 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 This experiment was created using PsychoPy3 Experiment Builder (v2026.1.3),
-    on Sat Oct  3 16:49:10 2026
+    on Sat Oct  3 16:53:07 2026
 If you publish work using this script the most relevant publication is:
 
     Peirce J, Gray JR, Simpson S, MacAskill M, Höchenberger R, Sogo H, Kastman E, Lindeløv JK. (2019) 
@@ -33,19 +33,9 @@ import sys  # to get file system encoding
 from psychopy.hardware import keyboard
 
 # Run 'Before Experiment' code from init_code
-import sys
-from pathlib import Path
 import angel_paradigm_coder as engine
 args = engine.parse_args()
-if getattr(args, 'export_trigger_codes', None):
-    out_p = Path(args.export_trigger_codes)
-    ms = engine.MarkerSender(args, None, None)
-    ms.save_trigger_codes_json(out_p, participant=getattr(args, 'participant', 'test'))
-    print(f'Trigger codes successfully exported to {out_p}')
-    sys.exit(0)
-if not args.used_cli_config and not getattr(args, 'no_config_dialog', False):
-    args = engine.show_config_dialog(args)
-    engine.save_config_defaults(engine.args_to_config(args))
+args = engine.show_config_dialog(args)
 engine.CURRENT_ARGS = args
 
 # --- Setup global variables (available in all functions) ---
@@ -79,7 +69,7 @@ or run the experiment with `--pilot` as an argument. To change what pilot
 PILOTING = core.setPilotModeFromArgs()
 # start off with values from experiment settings
 _fullScr = True
-_winSize = [1280, 800]
+_winSize = [1280,800]
 # if in pilot mode, apply overrides according to preferences
 if PILOTING:
     # force windowed mode
@@ -138,7 +128,7 @@ def setupData(expInfo, dataDir=None):
     # data file name stem = absolute path + name; later add .psyexp, .csv, .log, etc
     if dataDir is None:
         dataDir = 'data'
-    filename = u'%s_angel_paradigm_builder_%s' % (engine.CURRENT_ARGS.participant if ('engine' in globals() and hasattr(engine, 'CURRENT_ARGS') and engine.CURRENT_ARGS) else expInfo['participant'], expInfo['date'])
+    filename = u'data/%s_%s_%s' % (engine.CURRENT_ARGS.participant if ('engine' in globals() and hasattr(engine, 'CURRENT_ARGS') and engine.CURRENT_ARGS) else expInfo['participant'], expName, expInfo['date'])
     # make sure filename is relative to dataDir
     if os.path.isabs(filename):
         dataDir = os.path.commonprefix([dataDir, filename])
@@ -148,7 +138,7 @@ def setupData(expInfo, dataDir=None):
     thisExp = data.ExperimentHandler(
         name=expName, version=expVersion,
         extraInfo=expInfo, runtimeInfo=None,
-        originPath='angel_paradigm.py',
+        originPath='/Users/arunsasidharan/Code/ActiveProjects/ANGEL_PsychoPy/angel_paradigm.py',
         savePickle=True, saveWideText=True,
         dataFileName=dataDir + os.sep + filename, sortColumns='time'
     )
@@ -411,18 +401,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     rng = std_random.Random(args.seed)
     assets_by_level = {lvl: engine.load_assets(args.resource_root / engine.LEVEL_TEMPLATES[lvl], args.language) for lvl in levels}
     assets = assets_by_level[levels[0]]
-    trial_counter = 0
-    main_session_rows = []
-    # Adapter so engine can log directly to PsychoPy ExperimentHandler
-    class _PsyWriter:
-        def writerow(self, row):
-            for k, v in row.items():
-                thisExp.addData(k, v)
-            thisExp.nextEntry()
-    class _PsyFile:
-        def flush(self): pass
-    psy_writer = _PsyWriter()
-    psy_file = _PsyFile()
     
     
     # --- Initialize components for Routine "Instructions" ---
@@ -439,11 +417,9 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         texRes=128.0, interpolate=True, depth=-1.0)
     instruction_key = keyboard.Keyboard(deviceName='defaultKeyboard')
     
-    # --- Initialize components for Routine "PracticeRoutine" ---
-    
     # --- Initialize components for Routine "TriggerWait" ---
     trigger_text = visual.TextStim(win=win, name='trigger_text',
-        text='Waiting for scanner trigger...',
+        text='Waiting for scanner trigger (s)...',
         font='Arial',
         units='height', pos=(0, 0), draggable=False, height=0.05, wrapWidth=None, ori=0.0, 
         color='white', colorSpace='rgb', opacity=None, 
@@ -502,6 +478,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         texRes=128.0, interpolate=True, depth=-5.0)
     response_key = keyboard.Keyboard(deviceName='defaultKeyboard')
     # Run 'Begin Experiment' code from trial_runner
+    trial_counter = 0
     trials = []
     
     
@@ -531,7 +508,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         ori=0.0, pos=(0, 0), draggable=False, size=(1.333, 1.0),
         color=[1,1,1], colorSpace='rgb', opacity=None,
         flipHoriz=False, flipVert=False,
-        texRes=128.0, interpolate=True, depth=-1.0)
+        texRes=128.0, interpolate=True, depth=0.0)
     end_key = keyboard.Keyboard(deviceName='defaultKeyboard')
     
     # create some handy timers
@@ -663,7 +640,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     if args.skip_instructions:
         continueRoutine = False
     else:
-        markers.send('instruction_start', 101)
         inst_img = str(assets['language'] / 'InstructionLevel1.PNG')
         instruction_image.setImage(inst_img)
         if args.audio_instructions:
@@ -815,7 +791,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     Instructions.tStopRefresh = tThisFlipGlobal
     thisExp.addData('Instructions.stopped', Instructions.tStop)
     # Run 'End Routine' code from instruction_code
-    markers.send('instruction_end', 102)
     if 'inst_audio' in locals() and inst_audio:
         inst_audio.stop()
     
@@ -830,101 +805,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     # the Routine "Instructions" was not non-slip safe, so reset the non-slip timer
     routineTimer.reset()
     
-    # --- Prepare to start Routine "PracticeRoutine" ---
-    # create an object to store info about Routine PracticeRoutine
-    PracticeRoutine = data.Routine(
-        name='PracticeRoutine',
-        components=[],
-    )
-    PracticeRoutine.status = NOT_STARTED
-    continueRoutine = True
-    # update component parameters for each repeat
-    # Run 'Begin Routine' code from practice_code
-    # Run Practice Phase BEFORE scanner trigger wait
-    if args.practice > 0 and not args.skip_instructions:
-        trial_counter = engine.run_practice_phase(
-            levels, args, win, core, event, visual, sound,
-            psy_writer, psy_file, rng, trial_counter, exp_clock, markers
-        )
-    continueRoutine = False
-    
-    # store start times for PracticeRoutine
-    PracticeRoutine.tStartRefresh = win.getFutureFlipTime(clock=globalClock)
-    PracticeRoutine.tStart = globalClock.getTime(format='float')
-    PracticeRoutine.status = STARTED
-    thisExp.addData('PracticeRoutine.started', PracticeRoutine.tStart)
-    PracticeRoutine.maxDuration = None
-    # keep track of which components have finished
-    PracticeRoutineComponents = PracticeRoutine.components
-    for thisComponent in PracticeRoutine.components:
-        thisComponent.tStart = None
-        thisComponent.tStop = None
-        thisComponent.tStartRefresh = None
-        thisComponent.tStopRefresh = None
-        if hasattr(thisComponent, 'status'):
-            thisComponent.status = NOT_STARTED
-    # reset timers
-    t = 0
-    _timeToFirstFrame = win.getFutureFlipTime(clock="now")
-    frameN = -1
-    
-    # --- Run Routine "PracticeRoutine" ---
-    thisExp.currentRoutine = PracticeRoutine
-    PracticeRoutine.forceEnded = routineForceEnded = not continueRoutine
-    while continueRoutine:
-        # get current time
-        t = routineTimer.getTime()
-        tThisFlip = win.getFutureFlipTime(clock=routineTimer)
-        tThisFlipGlobal = win.getFutureFlipTime(clock=None)
-        frameN = frameN + 1  # number of completed frames (so 0 is the first frame)
-        # update/draw components on each frame
-        
-        # check for quit (typically the Esc key)
-        if defaultKeyboard.getKeys(keyList=["escape"]):
-            thisExp.status = FINISHED
-        if thisExp.status == FINISHED or endExpNow:
-            endExperiment(thisExp, win=win)
-            return
-        # pause experiment here if requested
-        if thisExp.status == PAUSED:
-            pauseExperiment(
-                thisExp=thisExp, 
-                win=win, 
-                timers=[routineTimer, globalClock], 
-                currentRoutine=PracticeRoutine,
-            )
-            # skip the frame we paused on
-            continue
-        
-        # has a Component requested the Routine to end?
-        if not continueRoutine:
-            PracticeRoutine.forceEnded = routineForceEnded = True
-        # has the Routine been forcibly ended?
-        if PracticeRoutine.forceEnded or routineForceEnded:
-            break
-        # has every Component finished?
-        continueRoutine = False
-        for thisComponent in PracticeRoutine.components:
-            if hasattr(thisComponent, "status") and thisComponent.status != FINISHED:
-                continueRoutine = True
-                break  # at least one component has not yet finished
-        
-        # refresh the screen
-        if continueRoutine:  # don't flip if this routine is over or we'll get a blank screen
-            win.flip()
-    
-    # --- Ending Routine "PracticeRoutine" ---
-    for thisComponent in PracticeRoutine.components:
-        if hasattr(thisComponent, "setAutoDraw"):
-            thisComponent.setAutoDraw(False)
-    # store stop times for PracticeRoutine
-    PracticeRoutine.tStop = globalClock.getTime(format='float')
-    PracticeRoutine.tStopRefresh = tThisFlipGlobal
-    thisExp.addData('PracticeRoutine.stopped', PracticeRoutine.tStop)
-    thisExp.nextEntry()
-    # the Routine "PracticeRoutine" was not non-slip safe, so reset the non-slip timer
-    routineTimer.reset()
-    
     # --- Prepare to start Routine "TriggerWait" ---
     # create an object to store info about Routine TriggerWait
     TriggerWait = data.Routine(
@@ -937,13 +817,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     # Run 'Begin Routine' code from trigger_code
     if not args.fmri_mode:
         continueRoutine = False
-    else:
-        markers.send('trigger_wait_start', 105)
-        dummy_n = getattr(args, 'dummy_scans', 5)
-        tr_val = getattr(args, 'tr_s', 2.0)
-        wait_s = dummy_n * tr_val
-        msg = f'fMRI Scanner Session\n\nWaiting for scanner trigger...\n\n(Equilibration: {dummy_n} TRs = {wait_s:.1f}s)'
-        trigger_text.setText(msg)
     
     # create starting attributes for trigger_key
     trigger_key.keys = []
@@ -1003,7 +876,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         # if trigger_text is stopping this frame...
         if trigger_text.status == STARTED:
             # is it time to stop? (based on global clock, using actual start)
-            if tThisFlipGlobal > trigger_text.tStartRefresh + args.dummy_scans * args.tr_s if 'args' in locals() and hasattr(args, 'dummy_scans') else 11.0-frameTolerance:
+            if tThisFlipGlobal > trigger_text.tStartRefresh + args.wait_duration_s if 'args' in locals() else 11.0-frameTolerance:
                 # keep track of stop time/frame for later
                 trigger_text.tStop = t  # not accounting for scr refresh
                 trigger_text.tStopRefresh = tThisFlipGlobal  # on global time
@@ -1036,7 +909,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         # if trigger_key is stopping this frame...
         if trigger_key.status == STARTED:
             # is it time to stop? (based on global clock, using actual start)
-            if tThisFlipGlobal > trigger_key.tStartRefresh + args.dummy_scans * args.tr_s if 'args' in locals() and hasattr(args, 'dummy_scans') else 11.0-frameTolerance:
+            if tThisFlipGlobal > trigger_key.tStartRefresh + args.wait_duration_s if 'args' in locals() else 11.0-frameTolerance:
                 # keep track of stop time/frame for later
                 trigger_key.tStop = t  # not accounting for scr refresh
                 trigger_key.tStopRefresh = tThisFlipGlobal  # on global time
@@ -1098,11 +971,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     TriggerWait.tStop = globalClock.getTime(format='float')
     TriggerWait.tStopRefresh = tThisFlipGlobal
     thisExp.addData('TriggerWait.stopped', TriggerWait.tStop)
-    # Run 'End Routine' code from trigger_code
-    if args.fmri_mode:
-        args.trigger_onset_global = exp_clock.getTime()
-        markers.send('trigger_received', 106)
-    
     # check responses
     if trigger_key.keys in ['', [], None]:  # No response was made
         trigger_key.keys = None
@@ -1129,76 +997,76 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     _response_key_allKeys = []
     # Run 'Begin Routine' code from trial_runner
     # ==============================================================================
-    # ANGEL MAIN SESSION CONTROLLER
+    # ANGEL TRIAL CONTROLLER: MICROSECOND-ACCURATE ENGINE
     # ==============================================================================
-    active_trials, baseline_trials = engine.parse_trials_per_block(args.trials_per_block)
-    block_trial_count = active_trials + baseline_trials
-    total_main_trials = args.blocks * block_trial_count
-    for level in levels:
-        assets = assets_by_level[level]
+    # The visual components above represent the trial display structure in Studio.
+    # Execution uses hardware-synced drawing, audio offsets, and event markers below.
+    # ==============================================================================
+    if 'session_initialized' not in locals():
+        session_initialized = True
+        assets = assets_by_level[levels[0]]
         stimuli = engine.make_stimuli(win, visual, assets)
         audio_cache = engine.make_audio_cache(sound, assets)
-        block_rows = []
-        for trial in engine.generate_level_trials(
-            level, args.blocks, rng, args.category_set,
-            args.paired_tone_offset_mode, args.paired_tone_offset_min,
-            args.paired_tone_offset_max, args.cd_schedule,
-            active_trials, baseline_trials, args.level2_cd
-        ):
-            if trial.trial_in_block == 1:
-                markers.send('block_start', 1)
-            trial_counter += 1
-            block_name = f'level{level}_block{trial.block:02d}'
-            row = engine.run_trial(
-                trial, args, win, core, event, visual, sound, stimuli,
-                assets, audio_cache, rng, trial_counter, exp_clock, markers, block_name
-            )
-            row['phase'] = 'main'
-            block_rows.append(row)
-            main_session_rows.append(row)
-            for k, v in row.items():
-                thisExp.addData(k, v)
-            thisExp.nextEntry()
-            # Mid-block feedback (only if show_feedback is True)
-            if getattr(args, 'show_feedback', True) and trial.trial_in_block == block_trial_count and trial.block % getattr(args, 'feedback_frequency', 2) == 0:
-                markers.send('feedback_start', 107)
-                engine.show_feedback(
-                    win, event, visual, sound, assets['language'],
-                    block_rows[-2 * block_trial_count:],
-                    len(block_rows), total_main_trials
+        # Adapter so run_practice_phase can log directly to PsychoPy ExperimentHandler
+        class _PsyWriter:
+            def writerow(self, row):
+                for k, v in row.items():
+                    thisExp.addData(k, v)
+                thisExp.nextEntry()
+        class _PsyFile:
+            def flush(self): pass
+        # 1. Run Practice Phase (if practice > 0)
+        trial_counter = engine.run_practice_phase(
+            levels, args, win, core, event, visual, sound,
+            _PsyWriter(), _PsyFile(), rng, 0, exp_clock, markers
+        )
+        # 2. Main Blocks Loop
+        active_trials, baseline_trials = engine.parse_trials_per_block(args.trials_per_block)
+        block_trial_count = active_trials + baseline_trials
+        total_main_trials = args.blocks * block_trial_count
+        for level in levels:
+            assets = assets_by_level[level]
+            stimuli = engine.make_stimuli(win, visual, assets)
+            audio_cache = engine.make_audio_cache(sound, assets)
+            block_rows = []
+            for trial in engine.generate_level_trials(
+                level, args.blocks, rng, args.category_set,
+                args.paired_tone_offset_mode, args.paired_tone_offset_min,
+                args.paired_tone_offset_max, args.cd_schedule,
+                active_trials, baseline_trials, args.level2_cd
+            ):
+                if trial.trial_in_block == 1:
+                    markers.send('block_start')
+                trial_counter += 1
+                block_name = f'level{level}_block{trial.block:02d}'
+                row = engine.run_trial(
+                    trial, args, win, core, event, visual, sound, stimuli,
+                    assets, audio_cache, rng, trial_counter, exp_clock, markers, block_name
                 )
-                markers.send('feedback_end', 108)
-            # Level 2 Reversal Rule Slide (at halfway point)
-            if level == '2' and trial.block == args.blocks // 2 and trial.trial_in_block == block_trial_count:
-                markers.send('reversal_rule_start', 109)
-                rev_text = 'Rule change\n\nMeaningful: RIGHT\nAmbiguous: LEFT'
-                if getattr(args, 'passive_mode', False):
-                    rev_text += '\n\nContinuing automatically...'
-                else:
-                    rev_text += f'\n\nPress {engine._continue_hint()} to continue'
-                reversal = visual.TextStim(win, text=rev_text, color='white', height=0.04, units='height')
-                reversal.draw()
-                win.flip()
-                engine.wait_for_continue(event, timeout=getattr(args, 'slide_timeout', 5.0))
-                markers.send('reversal_rule_end', 110)
-        # Level Session Summary (only if show_feedback is True)
-        if getattr(args, 'show_feedback', True):
-            engine.show_session_summary(win, event, visual, sound, assets['language'], block_rows, label=f'Level {level} Session')
-    # Export fMRI Events CSV, Marker Log, and Trigger Codes JSON
-    from pathlib import Path
-    if hasattr(thisExp, 'dataFileName') and thisExp.dataFileName:
-        csv_p = Path(thisExp.dataFileName + '.csv')
-        markers_p = csv_p.with_name(csv_p.stem + '_markers.csv')
-        markers.save_log(markers_p)
-        trig_json_p = csv_p.with_name(csv_p.stem + '_trigger_codes.json')
-        markers.save_trigger_codes_json(trig_json_p, participant=getattr(args, 'participant', ''))
-        try:
-            markers.save_trigger_codes_json(csv_p.parent / 'angel_trigger_codes.json', participant=getattr(args, 'participant', ''))
-        except Exception:
-            pass
-        if getattr(args, 'fmri_mode', False) and getattr(args, 'trigger_onset_global', None) is not None:
-            events_p = csv_p.with_name(csv_p.stem + '_fmri_events.csv')
-            engine.save_fmri_events(events_p, main_session_rows, args.trigger_onset_global)
+                row['phase'] = 'main'
+                block_rows.append(row)
+                for k, v in row.items():
+                    thisExp.addData(k, v)
+                thisExp.nextEntry()
+                # Block Feedback (governed by feedback_frequency: 1 or 2 blocks)
+                if trial.trial_in_block == block_trial_count and trial.block % getattr(args, 'feedback_frequency', 2) == 0:
+                    if args.show_feedback:
+                        engine.show_feedback(
+                            win, event, visual, sound, assets['language'],
+                            block_rows[-2 * block_trial_count:],
+                            len(block_rows), total_main_trials
+                        )
+                # Level 2 Reversal Rule Slide (at halfway point)
+                if level == '2' and trial.block == args.blocks // 2 and trial.trial_in_block == block_trial_count:
+                    reversal = visual.TextStim(win,
+                        text=f'Rule change\n\nMeaningful: RIGHT\nAmbiguous: LEFT\n\nPress {engine._continue_hint()} to continue',
+                        color='white', height=0.04, units='height')
+                    reversal.draw()
+                    win.flip()
+                    engine.wait_for_continue(event)
+            # Level Session Summary
+            if args.show_feedback:
+                engine.show_session_summary(win, event, visual, sound, assets['language'], block_rows, label=f'Level {level} Session')
     continueRoutine = False
     
     # store start times for TrialRoutine
@@ -1544,11 +1412,8 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     continueRoutine = True
     # update component parameters for each repeat
     # Run 'Begin Routine' code from feedback_code
-    if not getattr(args, 'show_feedback', True):
+    if not args.show_feedback:
         continueRoutine = False
-    else:
-        if getattr(args, 'passive_mode', False):
-            feedback_text.setText('Session Complete!\n\nContinuing automatically...')
     
     # create starting attributes for feedback_key
     feedback_key.keys = []
@@ -1729,9 +1594,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     End.status = NOT_STARTED
     continueRoutine = True
     # update component parameters for each repeat
-    # Run 'Begin Routine' code from end_code
-    markers.send('experiment_end', 99)
-    
     # create starting attributes for end_key
     end_key.keys = []
     end_key.rt = []
