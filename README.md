@@ -98,29 +98,41 @@ sequenceDiagram
     participant Aud as Sound Output
     participant Trig as EEG / fMRI Trigger
 
-    Note over Disp: Fixation Cross (Pre-stimulus jitter: 350-500 ms)
+    Note over Disp: Fixation Cross & Baseline Masks (Pre-stim: 240 ms)
     Disp->>Trig: Send Fixation Marker (10)
-    Note over Disp,Aud: Target Stimulus Onset (100 ms)
-    Disp->>Trig: Send Stimulus Marker (30-36)
-    opt Auditory Distractor (80% Standard / 20% Deviant)
+    opt Paired Auditory Distractor Tone (-240ms to +160ms relative to visual onset)
         Aud->>Trig: Sound Onset Marker (20 / 21)
     end
-    Note over Disp: Checkerboard Mask (Response Window: 1000 ms)
+    Note over Disp,Aud: Target Stimulus Onset (Duration: 240 ms | 0.24s – 0.48s)
+    Disp->>Trig: Send Stimulus Marker (30-36)
+    Note over Disp: Backward Mask & Response Window (Duration: 700 ms | 0.24s – 0.94s)
     Sub->>Trig: Key Press / Button Box (Left or Right)
     Trig->>Trig: Send Response Marker (40 / 41)
     opt Corollary Discharge Active
         Aud->>Trig: Contingent Tone (Immediate 50ms / Delayed 250ms)
     end
-    Note over Disp: Post-Trial Masked Baseline (Variable Jitter: 1100-1450 ms)
-    Note over Disp: Total Trial Duration: Fixed Epoch (e.g., 1500 ms target)
+    Note over Disp: Post-Trial Masked Baseline (Dynamic Jitter: completing ~1500 ms epoch)
+    Note over Disp: Total Trial Target Epoch: 1.50 s (±0.35 s inter-trial jitter)
 ```
 
-1. **Pre-stimulus Fixation**: Central cross (`plus.png`) for 350–500 ms.
-2. **Target Display**: Mooney face or Kanizsa shape on Left or Right hemifield for 100 ms.
-3. **Auditory Oddball Tone**: Concurrent or jittered auditory presentation (Standard 800 Hz vs. Deviant 500 Hz).
-4. **Response Window & Mask**: High-contrast checkerboard mask (`cb.png`) presented for up to 1000 ms or until response.
-5. **Corollary Tone**: Post-response auditory feedback tone (50 ms immediate or 250 ms delayed).
-6. **Inter-Trial Baseline**: Dynamic jittered post-trial mask ensuring a consistent overall trial cycle with randomized event onsets.
+### Trial Routine Component Breakdown
+
+| Component in Routine | Onset & Duration | Function in ANGEL Trial |
+| :--- | :--- | :--- |
+| `fixation` | `0.0s – 1.5s` (Full trial) | Central fixation cross (`plus.png`), active across all phases. |
+| `left_mask` & `right_mask` | `0.0s – 1.5s` (Full trial) | Baseline peripheral checkerboards (`cb.png`). At target onset (0.24s), the stimulus appears on one side. |
+| `target_stim` | `0.24s – 0.48s` (Duration: 240 ms) | The Mooney Face or Kanizsa shape presented on either the left or right side. |
+| `top_distractor` & `bottom_distractor` | `0.24s – 0.48s` (Duration: 240 ms) | Peripheral checkerboard distractors displayed above/below fixation during the target window. |
+| `response_key` | `0.24s – 0.94s` (Duration: 700 ms) | Active response window open from visual onset until deadline. |
+| `trial_runner` | Engine execution | Handles microsecond frame presentation, paired auditory tone scheduling (-240 ms to +160 ms relative to target onset), post-response corollary discharge (CD) tones, and hardware marker pulses. |
+
+### Chronological Trial Sequence
+1. **Pre-stimulus Baseline & Fixation**: Central cross (`plus.png`) and bilateral checkerboard masks (`cb.png`) presented for **240 ms** (`0.00s – 0.24s`).
+2. **Target Display & Peripheral Distractors**: Mooney face or Kanizsa shape displayed on the Left or Right hemifield for **240 ms** (`0.24s – 0.48s`), flanked by top and bottom checkerboard distractors.
+3. **Auditory Oddball Tone**: Concurrent or jittered auditory presentation (Standard 800 Hz vs. Deviant 500 Hz) scheduled between **-240 ms and +160 ms** relative to visual target onset.
+4. **Active Response Window & Backward Masking**: Participant response window opens at visual onset (`0.24s`) and remains active for **700 ms** (until `0.94s`). High-contrast checkerboard mask (`cb.png`) replaces the target after 240 ms.
+5. **Corollary Discharge (CD) Tone**: Contingent auditory feedback tone (50 ms immediate or 250 ms delayed upon response).
+6. **Post-Trial Masked Baseline & Jitter**: Dynamic jittered post-trial mask ensuring a consistent overall trial cycle with a target epoch of **1.50 s** (jitter range ±0.35 s).
 
 ---
 
