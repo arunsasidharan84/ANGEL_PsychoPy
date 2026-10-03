@@ -100,7 +100,7 @@ CONFIG_DEFAULTS = {
     "monitor": "testMonitor",
     "resource_root": "EPrimeFiles",  # relative to this script's folder; stays portable when copied to a new machine
     "skip_instructions": False,
-    "category_set": "all",
+    "category_set": "face",
     "paired_tone_offset_mode": "continuous",
     "paired_tone_offset_min": -0.240,
     "paired_tone_offset_max": 0.160,
@@ -110,6 +110,10 @@ CONFIG_DEFAULTS = {
     "fmri_mode": False,
     "trials_per_block": "25+3",
     "continue_keys": ["any"],
+    "slide_timeout": 5.0,
+    "passive_mode": False,
+    "tr_s": 2.0,
+    "dummy_scans": 5,
     "screen": 0,
     "pre_stim_duration": 0.240,
     "stim_duration": 0.240,
@@ -131,9 +135,9 @@ CONFIG_DEFAULTS = {
     "cd_volume": 0.7,
     "cd_repeats": 1,
     "cd_repeat_gap": 0.250,
-    "left_keys": ["left", "z", "1"],
-    "right_keys": ["right", "slash", "2"],
-    "trigger_keys": ["space", "s"],
+    "left_keys": ["left", "z", "1", "4"],
+    "right_keys": ["right", "slash", "2", "9"],
+    "trigger_keys": ["space", "s", "4", "9"],
     "wait_duration_s": 11.0,
     "audio_instructions": True,
     "show_feedback": True,
@@ -144,11 +148,11 @@ CONFIG_DEFAULTS = {
 }
 
 KEYS = {
-    "left": ["left", "z", "1"],
-    "right": ["right", "slash", "2"],
+    "left": ["left", "z", "1", "4"],
+    "right": ["right", "slash", "2", "9"],
     "quit": ["escape", "q"],
-    "continue": ["space", "return"],
-    "trigger": ["space", "s"],
+    "continue": ["any"],
+    "trigger": ["space", "s", "4", "9"],
 }
 
 
@@ -484,6 +488,37 @@ def parse_args() -> argparse.Namespace:
         help=f"Comma-separated keys to advance slides (use 'any' for any keypress). Default: {continue_default}",
     )
     parser.add_argument(
+        "--slide-timeout",
+        type=float,
+        default=config_defaults.get("slide_timeout", 5.0),
+        help="Timeout in seconds for instruction and feedback slides before auto-advancing (default: 5.0; 0 = no timeout).",
+    )
+    parser.add_argument(
+        "--passive-mode",
+        action="store_true",
+        dest="passive_mode",
+        help="Passive viewing mode: participant does not press buttons. Slides and trials auto-advance.",
+    )
+    parser.add_argument(
+        "--no-passive-mode",
+        action="store_false",
+        dest="passive_mode",
+        help="Active participant mode with button responses (default).",
+    )
+    parser.set_defaults(passive_mode=config_defaults.get("passive_mode", False))
+    parser.add_argument(
+        "--tr-s",
+        type=float,
+        default=config_defaults.get("tr_s", 2.0),
+        help="fMRI Repetition Time (TR) in seconds. Default: 2.0.",
+    )
+    parser.add_argument(
+        "--dummy-scans",
+        type=int,
+        default=config_defaults.get("dummy_scans", 5),
+        help="Number of dummy scans before experiment starts. Default: 5.",
+    )
+    parser.add_argument(
         "--screen",
         type=int,
         default=config_defaults.get("screen", 0),
@@ -787,6 +822,455 @@ def get_psychopy():
 
 
 def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
+    """Show the configuration dialog. Attempts modern PyQt6 tabbed dialog first;
+    falls back to PsychoPy DlgFromDict if PyQt6 is not available."""
+    res = _show_qt_config_dialog(args)
+    if res is not None:
+        return res
+    return _show_psychopy_config_dialog(args)
+
+
+
+def _show_qt_config_dialog(args: argparse.Namespace) -> argparse.Namespace | None:
+    try:
+        from PyQt6 import QtWidgets, QtCore, QtGui
+    except Exception:
+        return None
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    class AngelConfigDialog(QtWidgets.QDialog):
+        def __init__(self, args, parent=None):
+            super().__init__(parent)
+            self.args = args
+            self.setWindowTitle("ANGEL Cognitive Paradigm Setup")
+            self.resize(680, 640)
+            self.setMinimumSize(600, 540)
+            self._init_ui()
+
+        def _init_ui(self):
+            main_layout = QtWidgets.QVBoxLayout(self)
+            main_layout.setContentsMargins(18, 18, 18, 18)
+            main_layout.setSpacing(14)
+
+            # Title Header Banner
+            header_widget = QtWidgets.QWidget()
+            header_layout = QtWidgets.QVBoxLayout(header_widget)
+            header_layout.setContentsMargins(0, 0, 0, 4)
+            header_layout.setSpacing(2)
+
+            title_label = QtWidgets.QLabel("ANGEL Cognitive Paradigm")
+            title_font = QtGui.QFont()
+            title_font.setPointSize(17)
+            title_font.setBold(True)
+            title_label.setFont(title_font)
+            title_label.setStyleSheet("color: #1565C0; margin-bottom: 1px;")
+            header_layout.addWidget(title_label)
+
+            sub_label = QtWidgets.QLabel("Assessing Neurocognition via Gamified Experimental Logic — Setup & Parameters")
+            sub_label.setStyleSheet("color: #616161; font-size: 12px;")
+            header_layout.addWidget(sub_label)
+            main_layout.addWidget(header_widget)
+
+            # Tab Widget
+            self.tabs = QtWidgets.QTabWidget()
+            self.tabs.setStyleSheet("""
+                QTabWidget::pane { border: 1px solid #CCCCCC; border-radius: 4px; background: #FAFAFA; }
+                QTabBar::tab { font-size: 13px; font-weight: bold; padding: 8px 16px; margin-right: 2px; }
+                QTabBar::tab:selected { background: #FFFFFF; color: #1565C0; border-bottom: 2px solid #1565C0; }
+                QTabBar::tab:!selected { background: #E0E0E0; color: #555555; }
+            """)
+            main_layout.addWidget(self.tabs)
+
+            self._build_tab_run()
+            self._build_tab_timing()
+            self._build_tab_io()
+
+            # Connect listeners for instant live fMRI volume autocalculation
+            for widget in [self.cb_levels, self.cb_blocks, self.cb_trials_per_block, self.cb_feedback_freq]:
+                widget.currentIndexChanged.connect(self._update_fmri_calc)
+            for widget in [self.dsb_tr, self.sb_dummy_scans, self.dsb_trial_dur, self.dsb_jitter, self.dsb_slide_timeout]:
+                widget.valueChanged.connect(self._update_fmri_calc)
+            for widget in [self.chk_feedback, self.chk_passive, self.chk_fmri]:
+                widget.toggled.connect(self._update_fmri_calc)
+
+            self._update_fmri_calc()
+
+            # Footer Action Buttons
+            btn_layout = QtWidgets.QHBoxLayout()
+            btn_layout.setContentsMargins(0, 4, 0, 0)
+            
+            note_label = QtWidgets.QLabel("💡 All settings will be automatically remembered for subsequent runs.")
+            note_label.setStyleSheet("color: #757575; font-size: 11px;")
+            btn_layout.addWidget(note_label)
+            btn_layout.addStretch()
+
+            self.btn_cancel = QtWidgets.QPushButton("Cancel")
+            self.btn_cancel.setFixedWidth(100)
+            self.btn_cancel.setStyleSheet("padding: 7px 14px; font-size: 13px;")
+            self.btn_cancel.clicked.connect(self.reject)
+            btn_layout.addWidget(self.btn_cancel)
+
+            self.btn_start = QtWidgets.QPushButton("▶ Start Experiment")
+            self.btn_start.setFixedWidth(170)
+            self.btn_start.setDefault(True)
+            self.btn_start.setStyleSheet(
+                "QPushButton { background-color: #1565C0; color: white; font-weight: bold; "
+                "padding: 8px 18px; border-radius: 4px; font-size: 13px; } "
+                "QPushButton:hover { background-color: #0D47A1; } "
+                "QPushButton:pressed { background-color: #0A3880; }"
+            )
+            self.btn_start.clicked.connect(self._on_start)
+            btn_layout.addWidget(self.btn_start)
+
+            main_layout.addLayout(btn_layout)
+
+        def _build_tab_run(self):
+            tab = QtWidgets.QWidget()
+            layout = QtWidgets.QFormLayout(tab)
+            layout.setContentsMargins(16, 18, 16, 16)
+            layout.setSpacing(12)
+            layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+
+            self.ed_participant = QtWidgets.QLineEdit(str(getattr(self.args, "participant", "test")))
+            self.ed_participant.setStyleSheet("padding: 5px; font-size: 13px; font-weight: bold;")
+            layout.addRow("<b>Participant ID:</b>", self.ed_participant)
+
+            self.cb_levels = QtWidgets.QComboBox()
+            self.cb_levels.addItem("Levels 1 & 2 (Full Experiment)", "1,2")
+            self.cb_levels.addItem("Level 1 Only (Spatial Rule)", "1")
+            self.cb_levels.addItem("Level 2 Only (Semantic Rule)", "2")
+            cur_lvl = str(getattr(self.args, "levels", "1,2")).strip()
+            idx = self.cb_levels.findData(cur_lvl)
+            if idx >= 0: self.cb_levels.setCurrentIndex(idx)
+            layout.addRow("<b>Experiment Levels:</b>", self.cb_levels)
+
+            self.cb_category = QtWidgets.QComboBox()
+            self.cb_category.addItem("Face (Mooney Faces) [Recommended]", "face")
+            self.cb_category.addItem("Shape (Kanizsa Shapes)", "shape")
+            self.cb_category.addItem("All (Face & Shape)", "all")
+            cur_cat = str(getattr(self.args, "category_set", "face")).strip()
+            idx = self.cb_category.findData(cur_cat)
+            if idx >= 0: self.cb_category.setCurrentIndex(idx)
+            layout.addRow("<b>Stimulus Family:</b>", self.cb_category)
+
+            self.cb_language = QtWidgets.QComboBox()
+            for lang in ["english", "hindi", "kannada"]:
+                self.cb_language.addItem(lang.capitalize(), lang)
+            cur_lang = str(getattr(self.args, "language", "english")).strip().lower()
+            idx = self.cb_language.findData(cur_lang)
+            if idx >= 0: self.cb_language.setCurrentIndex(idx)
+            layout.addRow("Language:", self.cb_language)
+
+            self.cb_blocks = QtWidgets.QComboBox()
+            for b in [16, 8, 4]:
+                self.cb_blocks.addItem(f"{b} Blocks per level", b)
+            cur_b = int(getattr(self.args, "blocks", 16))
+            idx = self.cb_blocks.findData(cur_b)
+            if idx >= 0: self.cb_blocks.setCurrentIndex(idx)
+            layout.addRow("Blocks per Level:", self.cb_blocks)
+
+            self.cb_trials_per_block = QtWidgets.QComboBox()
+            self.cb_trials_per_block.addItem("25 Active + 3 Baseline (Standard)", "25+3")
+            self.cb_trials_per_block.addItem("20 Active + 3 Baseline (Shorter)", "20+3")
+            cur_tpb = str(getattr(self.args, "trials_per_block", "25+3")).strip()
+            idx = self.cb_trials_per_block.findData(cur_tpb)
+            if idx >= 0: self.cb_trials_per_block.setCurrentIndex(idx)
+            layout.addRow("Trials per Block:", self.cb_trials_per_block)
+
+            self.sb_practice = QtWidgets.QSpinBox()
+            self.sb_practice.setRange(0, 40)
+            self.sb_practice.setValue(int(getattr(self.args, "practice", 6)))
+            layout.addRow("Practice Trials per Level:", self.sb_practice)
+
+            self.chk_fullscreen = QtWidgets.QCheckBox("Enable Fullscreen Mode")
+            self.chk_fullscreen.setChecked(bool(getattr(self.args, "fullscreen", True)))
+            layout.addRow("Display:", self.chk_fullscreen)
+
+            self.chk_audio_inst = QtWidgets.QCheckBox("Play Audio Instruction Narrations")
+            self.chk_audio_inst.setChecked(bool(getattr(self.args, "audio_instructions", True)))
+            layout.addRow("Audio Narration:", self.chk_audio_inst)
+
+            self.chk_skip_inst = QtWidgets.QCheckBox("Skip Instructions Directly to Trials")
+            self.chk_skip_inst.setChecked(bool(getattr(self.args, "skip_instructions", False)))
+            layout.addRow("Skip Instructions:", self.chk_skip_inst)
+
+            self.chk_passive = QtWidgets.QCheckBox("Passive Viewing Mode (No button press required)")
+            self.chk_passive.setChecked(bool(getattr(self.args, "passive_mode", False)))
+            layout.addRow("Passive Viewing:", self.chk_passive)
+
+            self.tabs.addTab(tab, "📋 Run & Session")
+
+        def _build_tab_timing(self):
+            tab = QtWidgets.QWidget()
+            layout = QtWidgets.QFormLayout(tab)
+            layout.setContentsMargins(16, 18, 16, 16)
+            layout.setSpacing(12)
+            layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+
+            self.dsb_trial_dur = QtWidgets.QDoubleSpinBox()
+            self.dsb_trial_dur.setRange(0.5, 5.0)
+            self.dsb_trial_dur.setSingleStep(0.1)
+            self.dsb_trial_dur.setDecimals(3)
+            self.dsb_trial_dur.setValue(float(getattr(self.args, "trial_duration", 1.500)))
+            layout.addRow("Trial Duration (s):", self.dsb_trial_dur)
+
+            self.dsb_jitter = QtWidgets.QDoubleSpinBox()
+            self.dsb_jitter.setRange(0.0, 2.0)
+            self.dsb_jitter.setSingleStep(0.05)
+            self.dsb_jitter.setDecimals(3)
+            self.dsb_jitter.setValue(float(getattr(self.args, "inter_trial_jitter", 0.350)))
+            layout.addRow("Inter-Trial Jitter (±s):", self.dsb_jitter)
+
+            self.dsb_stim_dur = QtWidgets.QDoubleSpinBox()
+            self.dsb_stim_dur.setRange(0.05, 1.0)
+            self.dsb_stim_dur.setSingleStep(0.01)
+            self.dsb_stim_dur.setDecimals(3)
+            self.dsb_stim_dur.setValue(float(getattr(self.args, "stim_duration", 0.240)))
+            layout.addRow("Stimulus Duration (s):", self.dsb_stim_dur)
+
+            self.dsb_resp_win = QtWidgets.QDoubleSpinBox()
+            self.dsb_resp_win.setRange(0.2, 2.0)
+            self.dsb_resp_win.setSingleStep(0.05)
+            self.dsb_resp_win.setDecimals(3)
+            self.dsb_resp_win.setValue(float(getattr(self.args, "response_window", 0.700)))
+            layout.addRow("Response Window (s):", self.dsb_resp_win)
+
+            self.dsb_pre_stim = QtWidgets.QDoubleSpinBox()
+            self.dsb_pre_stim.setRange(0.05, 1.0)
+            self.dsb_pre_stim.setSingleStep(0.01)
+            self.dsb_pre_stim.setDecimals(3)
+            self.dsb_pre_stim.setValue(float(getattr(self.args, "pre_stim_duration", 0.240)))
+            layout.addRow("Pre-Stimulus Baseline (s):", self.dsb_pre_stim)
+
+            self.dsb_slide_timeout = QtWidgets.QDoubleSpinBox()
+            self.dsb_slide_timeout.setRange(0.0, 60.0)
+            self.dsb_slide_timeout.setSingleStep(1.0)
+            self.dsb_slide_timeout.setDecimals(1)
+            self.dsb_slide_timeout.setValue(float(getattr(self.args, "slide_timeout", 5.0)))
+            self.dsb_slide_timeout.setToolTip("Seconds before instruction and feedback slides auto-advance. Set to 0 to wait indefinitely.")
+            layout.addRow("<b>Slide Timeout (s):</b>", self.dsb_slide_timeout)
+
+            self.chk_feedback = QtWidgets.QCheckBox("Show Block Performance Feedback")
+            self.chk_feedback.setChecked(bool(getattr(self.args, "show_feedback", True)))
+            layout.addRow("Block Feedback:", self.chk_feedback)
+
+            self.cb_feedback_freq = QtWidgets.QComboBox()
+            self.cb_feedback_freq.addItem("After Every 2nd Block (Standard)", 2)
+            self.cb_feedback_freq.addItem("After Every Block", 1)
+            cur_ff = int(getattr(self.args, "feedback_frequency", 2))
+            idx = self.cb_feedback_freq.findData(cur_ff)
+            if idx >= 0: self.cb_feedback_freq.setCurrentIndex(idx)
+            layout.addRow("Feedback Frequency:", self.cb_feedback_freq)
+
+            self.chk_show_acc = QtWidgets.QCheckBox("Show Accuracy % and Reaction Time on Feedback")
+            self.chk_show_acc.setChecked(bool(getattr(self.args, "feedback_show_accuracy", True)))
+            layout.addRow("Feedback Metrics:", self.chk_show_acc)
+
+            self.cb_cd_sched = QtWidgets.QComboBox()
+            for s in ["by-block", "within-block", "all-immediate", "all-delayed", "all-none"]:
+                self.cb_cd_sched.addItem(s, s)
+            cur_cd = str(getattr(self.args, "cd_schedule", "by-block"))
+            idx = self.cb_cd_sched.findData(cur_cd)
+            if idx >= 0: self.cb_cd_sched.setCurrentIndex(idx)
+            layout.addRow("CD Schedule:", self.cb_cd_sched)
+
+            self.chk_cd_audio = QtWidgets.QCheckBox("Play Corollary Tone on Response")
+            self.chk_cd_audio.setChecked(bool(getattr(self.args, "cd_audio_feedback", True)))
+            layout.addRow("CD Audio Sound:", self.chk_cd_audio)
+
+            self.tabs.addTab(tab, "⏱️ Timing & Feedback")
+
+        def _build_tab_io(self):
+            tab = QtWidgets.QWidget()
+            layout = QtWidgets.QFormLayout(tab)
+            layout.setContentsMargins(16, 18, 16, 16)
+            layout.setSpacing(12)
+            layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+
+            self.cb_marker = QtWidgets.QComboBox()
+            self.cb_marker.addItem("None (No Hardware Markers)", "none")
+            self.cb_marker.addItem("LSL Stream (LabStreamingLayer)", "lsl")
+            self.cb_marker.addItem("Parallel Port TTL", "parallel")
+            self.cb_marker.addItem("Cedrus C-Pod (USB Serial)", "cpod")
+            self.cb_marker.addItem("Both (LSL + Parallel/C-Pod)", "both")
+            cur_m = str(getattr(self.args, "marker_mode", "none"))
+            idx = self.cb_marker.findData(cur_m)
+            if idx >= 0: self.cb_marker.setCurrentIndex(idx)
+            layout.addRow("<b>Marker Output Mode:</b>", self.cb_marker)
+
+            self.ed_lsl = QtWidgets.QLineEdit(str(getattr(self.args, "lsl_stream_name", "ANGELMarkers")))
+            layout.addRow("LSL Stream Name:", self.ed_lsl)
+
+            self.ed_parallel = QtWidgets.QLineEdit(str(getattr(self.args, "parallel_address", "0x0378")))
+            layout.addRow("Parallel Port Address:", self.ed_parallel)
+
+            self.ed_cpod = QtWidgets.QLineEdit(str(getattr(self.args, "cpod_port", "")))
+            self.ed_cpod.setPlaceholderText("Leave blank to auto-detect")
+            layout.addRow("C-Pod Serial Port:", self.ed_cpod)
+
+            self.chk_suppress_practice = QtWidgets.QCheckBox("Suppress Markers during Practice Phase")
+            self.chk_suppress_practice.setChecked(bool(getattr(self.args, "suppress_practice_markers", False)))
+            layout.addRow("Practice Markers:", self.chk_suppress_practice)
+
+            self.chk_fmri = QtWidgets.QCheckBox("fMRI Scanner Session (Wait for scanner trigger)")
+            self.chk_fmri.setChecked(bool(getattr(self.args, "fmri_mode", False)))
+            layout.addRow("fMRI Mode:", self.chk_fmri)
+
+            self.dsb_tr = QtWidgets.QDoubleSpinBox()
+            self.dsb_tr.setRange(0.5, 6.0)
+            self.dsb_tr.setSingleStep(0.1)
+            self.dsb_tr.setDecimals(2)
+            self.dsb_tr.setValue(float(getattr(self.args, "tr_s", 2.0)))
+            layout.addRow("Repetition Time TR (s):", self.dsb_tr)
+
+            self.sb_dummy_scans = QtWidgets.QSpinBox()
+            self.sb_dummy_scans.setRange(0, 30)
+            self.sb_dummy_scans.setValue(int(getattr(self.args, "dummy_scans", 5)))
+            layout.addRow("Dummy Scans (Discards):", self.sb_dummy_scans)
+
+            # Live fMRI scan calculation banner
+            self.fmri_banner = QtWidgets.QFrame()
+            self.fmri_banner.setStyleSheet("QFrame { background-color: #E3F2FD; border: 1px solid #90CAF9; border-radius: 6px; padding: 6px; }")
+            banner_layout = QtWidgets.QVBoxLayout(self.fmri_banner)
+            banner_layout.setContentsMargins(6, 6, 6, 6)
+            self.lbl_fmri_calc = QtWidgets.QLabel()
+            self.lbl_fmri_calc.setStyleSheet("color: #0D47A1; font-size: 11px;")
+            banner_layout.addWidget(self.lbl_fmri_calc)
+            layout.addRow("Scan Plan Estimator:", self.fmri_banner)
+
+            def _fmt_keys(k):
+                return ", ".join(k) if isinstance(k, list) else str(k)
+
+            self.ed_trigger_keys = QtWidgets.QLineEdit(_fmt_keys(getattr(self.args, "trigger_keys", ["space", "s", "4", "9"])))
+            layout.addRow("Scanner Trigger Keys:", self.ed_trigger_keys)
+
+            self.dsb_wait_dur = QtWidgets.QDoubleSpinBox()
+            self.dsb_wait_dur.setRange(1.0, 60.0)
+            self.dsb_wait_dur.setValue(float(getattr(self.args, "wait_duration_s", 11.0)))
+            layout.addRow("Trigger Wait Duration (s):", self.dsb_wait_dur)
+
+            self.ed_left_keys = QtWidgets.QLineEdit(_fmt_keys(getattr(self.args, "left_keys", ["left", "z", "1", "4"])))
+            layout.addRow("Left Response Keys:", self.ed_left_keys)
+
+            self.ed_right_keys = QtWidgets.QLineEdit(_fmt_keys(getattr(self.args, "right_keys", ["right", "slash", "2", "9"])))
+            layout.addRow("Right Response Keys:", self.ed_right_keys)
+
+            self.ed_continue_keys = QtWidgets.QLineEdit(_fmt_keys(getattr(self.args, "continue_keys", ["any"])))
+            layout.addRow("Continue Keys:", self.ed_continue_keys)
+
+            self.sb_screen = QtWidgets.QSpinBox()
+            self.sb_screen.setRange(0, 5)
+            self.sb_screen.setValue(int(getattr(self.args, "screen", 0)))
+            layout.addRow("Screen Index:", self.sb_screen)
+
+            self.tabs.addTab(tab, "🔌 EEG, fMRI & Hardware")
+
+        def _update_fmri_calc(self):
+            import math
+            levels_count = 2 if "1,2" in str(self.cb_levels.currentData()) else 1
+            blocks = int(self.cb_blocks.currentData() or 16) * levels_count
+            active_n, base_n = (25, 3) if "25+3" in str(self.cb_trials_per_block.currentData()) else (20, 3)
+            t_per_block = active_n + base_n
+            total_trials = blocks * t_per_block
+
+            tr = self.dsb_tr.value()
+            dummy_n = self.sb_dummy_scans.value()
+            dummy_time = dummy_n * tr
+            self.dsb_wait_dur.setValue(dummy_time)
+
+            trial_dur = self.dsb_trial_dur.value()
+            jitter = self.dsb_jitter.value()
+            fb_enabled = self.chk_feedback.isChecked()
+            fb_freq = int(self.cb_feedback_freq.currentData() or 2)
+            timeout = self.dsb_slide_timeout.value()
+            passive = self.chk_passive.isChecked()
+
+            num_fb = (blocks // fb_freq) if (fb_enabled and fb_freq > 0) else 0
+            min_fb_dur = timeout if passive else min(1.0, timeout)
+            max_fb_dur = timeout
+            mean_fb_dur = timeout if passive else (timeout + 1.0) / 2.0
+
+            min_time = dummy_time + total_trials * max(0.5, trial_dur - jitter) + num_fb * min_fb_dur
+            max_time = dummy_time + total_trials * (trial_dur + jitter) + num_fb * max_fb_dur
+            mean_time = dummy_time + total_trials * trial_dur + num_fb * mean_fb_dur
+
+            min_vols = math.ceil(min_time / tr)
+            max_vols = math.ceil(max_time / tr)
+            exp_vols = math.ceil(mean_time / tr)
+
+            min_m, min_s = divmod(int(min_time), 60)
+            max_m, max_s = divmod(int(max_time), 60)
+            exp_m, exp_s = divmod(int(mean_time), 60)
+
+            text = (
+                f"<b>Expected Scan Volumes:</b> <b>{exp_vols} volumes</b> (Min: {min_vols}, Max: {max_vols})<br>"
+                f"<b>Estimated Duration:</b> ~{exp_m}m {exp_s:02d}s (Range: {min_m}m {min_s:02d}s – {max_m}m {max_s:02d}s)<br>"
+                f"<b>Dummy Equilibration:</b> {dummy_n} TRs = {dummy_time:.1f}s | Total Trials: {total_trials} across {blocks} blocks"
+            )
+            self.lbl_fmri_calc.setText(text)
+
+        def _on_start(self):
+            p_id = self.ed_participant.text().strip()
+            self.args.participant = p_id if p_id else "test"
+            self.args.levels = self.cb_levels.currentData()
+            self.args.category_set = self.cb_category.currentData()
+            self.args.language = self.cb_language.currentData()
+            self.args.blocks = self.cb_blocks.currentData()
+            self.args.trials_per_block = self.cb_trials_per_block.currentData()
+            self.args.practice = self.sb_practice.value()
+            self.args.fullscreen = self.chk_fullscreen.isChecked()
+            self.args.audio_instructions = self.chk_audio_inst.isChecked()
+            self.args.skip_instructions = self.chk_skip_inst.isChecked()
+            self.args.passive_mode = self.chk_passive.isChecked()
+            self.args.tr_s = self.dsb_tr.value()
+            self.args.dummy_scans = self.sb_dummy_scans.value()
+
+            self.args.trial_duration = self.dsb_trial_dur.value()
+            self.args.inter_trial_jitter = self.dsb_jitter.value()
+            self.args.stim_duration = self.dsb_stim_dur.value()
+            self.args.response_window = self.dsb_resp_win.value()
+            self.args.pre_stim_duration = self.dsb_pre_stim.value()
+            self.args.slide_timeout = self.dsb_slide_timeout.value()
+
+            self.args.show_feedback = self.chk_feedback.isChecked()
+            self.args.feedback_frequency = self.cb_feedback_freq.currentData()
+            self.args.feedback_show_accuracy = self.chk_show_acc.isChecked()
+            self.args.cd_schedule = self.cb_cd_sched.currentData()
+            self.args.cd_audio_feedback = self.chk_cd_audio.isChecked()
+
+            self.args.marker_mode = self.cb_marker.currentData()
+            self.args.lsl_stream_name = self.ed_lsl.text().strip()
+            self.args.parallel_address = self.ed_parallel.text().strip()
+            self.args.cpod_port = self.ed_cpod.text().strip()
+            self.args.suppress_practice_markers = self.chk_suppress_practice.isChecked()
+            self.args.fmri_mode = self.chk_fmri.isChecked()
+            self.args.wait_duration_s = self.dsb_wait_dur.value()
+
+            def _parse_keys(text):
+                return [k.strip() for k in text.split(",") if k.strip()]
+
+            self.args.left_keys = _parse_keys(self.ed_left_keys.text())
+            self.args.right_keys = _parse_keys(self.ed_right_keys.text())
+            self.args.trigger_keys = _parse_keys(self.ed_trigger_keys.text())
+            self.args.continue_keys = _parse_keys(self.ed_continue_keys.text())
+            self.args.screen = self.sb_screen.value()
+
+            self.accept()
+
+    dialog = AngelConfigDialog(args)
+    if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+        # Save updated configuration to angel_config.json so it is remembered
+        try:
+            save_config_defaults(args_to_config(args))
+        except Exception:
+            pass
+        return args
+    else:
+        raise KeyboardInterrupt
+
+
+def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
     try:
         from psychopy import gui  # type: ignore
     except Exception:
@@ -1361,18 +1845,20 @@ def _continue_hint() -> str:
     return " / ".join(keys)
 
 
-def wait_for_continue(event) -> None:
+def wait_for_continue(event, timeout: float | None = None) -> None:
+    if timeout is None and CURRENT_ARGS:
+        timeout = getattr(CURRENT_ARGS, "slide_timeout", 5.0)
     event.clearEvents()
-    allowed = None if "any" in KEYS["continue"] else (KEYS["continue"] + KEYS["quit"])
-    while True:
-        keys = event.waitKeys(keyList=allowed)
-        if keys and keys[0] in KEYS["quit"]:
-            raise KeyboardInterrupt
-        if keys:
-            return
+    allowed = None if "any" in KEYS.get("continue", ["any"]) else (KEYS.get("continue", []) + KEYS.get("quit", ["escape", "q"]))
+    max_wait = timeout if (timeout is not None and timeout > 0) else None
+    keys = event.waitKeys(maxWait=max_wait, keyList=allowed)
+    if keys and keys[0] in KEYS.get("quit", ["escape", "q"]):
+        raise KeyboardInterrupt
+    # If key pressed or timeout expired, advance immediately
+    return
 
 
-def show_image_slide(win, event, visual, sound, image_path: Path, audio_path: Path | None = None) -> None:
+def show_image_slide(win, event, visual, sound, image_path: Path, audio_path: Path | None = None, timeout: float | None = None) -> None:
     image_path = existing_case_variant(image_path)
     if not image_path.exists():
         return
@@ -1395,7 +1881,7 @@ def show_image_slide(win, event, visual, sound, image_path: Path, audio_path: Pa
         audio.play()
     slide.draw()
     win.flip()
-    wait_for_continue(event)
+    wait_for_continue(event, timeout=timeout)
     if audio:
         audio.stop()
 
@@ -1686,6 +2172,17 @@ class MarkerSender:
         "cd_delayed": 51,
         "cd_none": 52,
         "trial_end": 90,
+        "instruction_start": 101,
+        "instruction_end": 102,
+        "practice_start": 103,
+        "practice_end": 104,
+        "trigger_wait_start": 105,
+        "trigger_received": 106,
+        "feedback_start": 107,
+        "feedback_end": 108,
+        "reversal_rule_start": 109,
+        "reversal_rule_end": 110,
+        "experiment_end": 99,
     }
 
     def __init__(self, args: argparse.Namespace, core, exp_clock) -> None:
@@ -1761,10 +2258,23 @@ class MarkerSender:
         if not self.log:
             return
         try:
+            trig = getattr(self.args, "trigger_onset_global", None)
+            enriched_log = []
+            for entry in self.log:
+                row_copy = dict(entry)
+                ts = float(entry.get("timestamp_s", 0.0))
+                if trig is not None:
+                    row_copy["timestamp_from_trigger_s"] = f"{ts - trig:.6f}"
+                else:
+                    row_copy["timestamp_from_trigger_s"] = ""
+                enriched_log.append(row_copy)
             with path.open("w", newline="", encoding="utf-8") as log_file:
-                writer = csv.DictWriter(log_file, fieldnames=["marker_index", "timestamp_s", "label", "code"])
+                writer = csv.DictWriter(
+                    log_file,
+                    fieldnames=["marker_index", "timestamp_s", "timestamp_from_trigger_s", "label", "code"]
+                )
                 writer.writeheader()
-                writer.writerows(self.log)
+                writer.writerows(enriched_log)
             print(f"Marker log written to {path}")
         except Exception as exc:
             print(f"WARNING: Could not write marker log: {exc}", file=sys.stderr)
@@ -1806,6 +2316,70 @@ class MarkerSender:
         return timestamp
 
 
+def save_fmri_events(path: Path, session_rows: list[dict], trigger_onset_global: float | None) -> None:
+    """Save a clean, trigger-offset corrected event CSV (BIDS/SPM/FSL ready)."""
+    if not session_rows or trigger_onset_global is None:
+        return
+    main_rows = [r for r in session_rows if r.get("phase") == "main"]
+    if not main_rows:
+        return
+    fieldnames = [
+        "onset",
+        "duration",
+        "trial_type",
+        "stimulus_category",
+        "target_side",
+        "frequency_class",
+        "auditory_class",
+        "response_key",
+        "rt_s",
+        "accuracy",
+    ]
+    events = []
+    for r in main_rows:
+        t_type = r.get("trial_type")
+        if t_type == "baseline":
+            onset = r.get("baseline_onset_from_trigger_s")
+            duration = r.get("trial_duration_actual_s") or 1.500
+            events.append({
+                "onset": f"{float(onset):.4f}" if onset not in [None, ""] else "",
+                "duration": f"{float(duration):.4f}",
+                "trial_type": "baseline",
+                "stimulus_category": "baseline",
+                "target_side": "",
+                "frequency_class": "baseline",
+                "auditory_class": "blank",
+                "response_key": "",
+                "rt_s": "",
+                "accuracy": "",
+            })
+        else:
+            onset = r.get("visual_onset_from_trigger_s")
+            cat = r.get("stimulus_category") or ""
+            freq = r.get("frequency_class") or ""
+            side = r.get("target_side") or ""
+            events.append({
+                "onset": f"{float(onset):.4f}" if onset not in [None, ""] else "",
+                "duration": f"{float(r.get('stim_duration') or 0.240):.4f}",
+                "trial_type": f"{cat}_{freq}_{side}".strip("_"),
+                "stimulus_category": cat,
+                "target_side": side,
+                "frequency_class": freq,
+                "auditory_class": r.get("auditory_class") or "",
+                "response_key": r.get("response_key") or "",
+                "rt_s": f"{float(r['rt_s']):.4f}" if r.get("rt_s") not in [None, ""] else "",
+                "accuracy": r.get("accuracy") if r.get("accuracy") is not None else "",
+            })
+    try:
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(events)
+        print(f"fMRI BOLD events written to {path}")
+    except Exception as exc:
+        print(f"WARNING: Could not write fMRI events: {exc}", file=sys.stderr)
+
+
 def run_trial(
     trial: Trial,
     args: argparse.Namespace,
@@ -1826,7 +2400,7 @@ def run_trial(
     force_trial_start: bool = False,
 ) -> dict:
     event.clearEvents()
-    response_keys = flatten([KEYS["left"], KEYS["right"], KEYS["quit"]])
+    response_keys = KEYS["quit"] if getattr(args, "passive_mode", False) else flatten([KEYS["left"], KEYS["right"], KEYS["quit"]])
     trial_clock = core.Clock()
     response = None
     response_onset = None
@@ -1870,7 +2444,7 @@ def run_trial(
         win.flip()
         baseline_onset = exp_clock.getTime()
         send_marker("baseline_start")
-        baseline_duration = rng.uniform(post_mask_min, post_mask_max)
+        baseline_duration = rng.uniform(max(0.2, args.trial_duration - args.inter_trial_jitter), max(0.2, args.trial_duration + args.inter_trial_jitter))
         core.wait(baseline_duration)
         trial_end_global = exp_clock.getTime()
         send_marker("trial_end")
@@ -2102,7 +2676,8 @@ def run_trial(
     post_mask_end = post_mask_start + post_mask_duration
 
     if response is None:
-        send_marker("response_miss")
+        if not getattr(args, "passive_mode", False):
+            send_marker("response_miss")
         if trial.corollary_mode == "none" and not cd_none_marker_sent:
             send_marker("cd_none")
             cd_none_marker_sent = True
@@ -2120,7 +2695,7 @@ def run_trial(
         send_marker("cd_delayed")
 
     accuracy = None
-    if trial.correct_response:
+    if trial.correct_response and not getattr(args, "passive_mode", False):
         accuracy = int(response == trial.correct_response)
 
     wait_until(core, trial_clock, post_mask_end, scheduled_sounds)
@@ -2377,6 +2952,8 @@ def show_practice_feedback(
     language_dir: Path,
     practice_rows: list[dict],
 ) -> bool:
+    if CURRENT_ARGS and not getattr(CURRENT_ARGS, "show_feedback", True):
+        return False
     active = [row for row in practice_rows if row["trial_type"] == "active" and row["accuracy"] is not None]
     if not active:
         return False
@@ -2465,9 +3042,7 @@ def run_practice_phase(
                 break
 
             if not args.skip_instructions:
-                show_welcome_slide(win, event, visual, level, phase="practice")
                 show_level_instruction(win, event, visual, sound, assets, level, "practice")
-                show_image_slide(win, event, visual, sound, assets["language"] / "PracticeStart.PNG", assets["language"] / "PracticeStart.mp3")
 
             practice_rows = []
             for trial in practice_trials:
@@ -2484,8 +3059,7 @@ def run_practice_phase(
                 output_file.flush()
                 practice_rows.append(row)
 
-            if not args.skip_instructions:
-                show_image_slide(win, event, visual, sound, assets["language"] / "PracticeEnd.PNG", assets["language"] / "PracticeEnd.mp3")
+            # Practice trials finished - proceed directly to practice feedback
 
             # Check if user wants to repeat
             repeat = False
@@ -2514,6 +3088,8 @@ def show_feedback(
     completed_trials: int,
     total_trials: int,
 ) -> None:
+    if CURRENT_ARGS and not getattr(CURRENT_ARGS, "show_feedback", True):
+        return
     active = [row for row in recent_rows if row["trial_type"] == "active" and row["accuracy"] is not None]
     if not active:
         return
@@ -2557,7 +3133,7 @@ def show_feedback(
     stim = visual.TextStim(win, text=text, pos=adjust_pos((0, -0.34)), color="white", height=0.035, units="height", **get_flip_params())
     stim.draw()
     win.flip()
-    wait_for_continue(event)
+    wait_for_continue(event, timeout=getattr(CURRENT_ARGS, "slide_timeout", 5.0))
     if audio:
         audio.stop()
 
@@ -2571,6 +3147,8 @@ def show_session_summary(
     session_rows: list[dict],
     label: str = "Session",
 ) -> None:
+    if CURRENT_ARGS and not getattr(CURRENT_ARGS, "show_feedback", True):
+        return
     """End-of-run accuracy summary for the main trial block.
 
     Mirrors show_practice_feedback (which already prints/displays accuracy
@@ -2625,7 +3203,7 @@ def show_session_summary(
     stim = visual.TextStim(win, text=text, pos=adjust_pos((0, -0.34)), color="white", height=0.035, units="height", **get_flip_params())
     stim.draw()
     win.flip()
-    wait_for_continue(event)
+    wait_for_continue(event, timeout=getattr(CURRENT_ARGS, "slide_timeout", 5.0))
     if audio:
         audio.stop()
 
@@ -2653,10 +3231,9 @@ def run_main_level(
     block_trial_count = active_trials + baseline_trials
     total_main_trials = args.blocks * block_trial_count
 
-    if not args.skip_instructions:
-        show_welcome_slide(win, event, visual, level)
+    if not args.skip_instructions and args.practice == 0:
+        # Show instruction slide if practice was skipped
         show_level_instruction(win, event, visual, sound, assets, level, "main")
-        show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
 
     block_rows: list[dict] = []
     ready_pending = False
@@ -2676,7 +3253,6 @@ def run_main_level(
         if trial.trial_in_block == 1:
             markers.send("block_start")
             if ready_pending:
-                show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
                 ready_pending = False
 
         trial_counter += 1
@@ -2957,6 +3533,14 @@ def main() -> int:
     finally:
         marker_log_path = output_path.with_name(output_path.stem + "_markers.csv")
         markers.save_log(marker_log_path)
+        if args.fmri_mode and getattr(args, "trigger_onset_global", None) is not None:
+            fmri_events_path = output_path.with_name(output_path.stem + "_fmri_events.csv")
+            try:
+                with output_path.open("r", encoding="utf-8") as f:
+                    csv_rows = list(csv.DictReader(f))
+                save_fmri_events(fmri_events_path, csv_rows, args.trigger_onset_global)
+            except Exception as e:
+                print(f"Could not export fMRI events: {e}", file=sys.stderr)
         markers.close()
         win.close()
 
