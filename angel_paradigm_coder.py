@@ -342,7 +342,7 @@ class Trial:
     reversal_phase: str | None
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(args_list: list[str] | None = None) -> argparse.Namespace:
     config_defaults = load_config_defaults()
     parser = argparse.ArgumentParser(
         description="Run the ANGEL Level 1/2 PsychoPy paradigm."
@@ -774,10 +774,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Export current trigger codes to the specified JSON file and exit.",
     )
-    args, _unknown = parser.parse_known_args()
+    args, _unknown = parser.parse_known_args(args_list)
+    raw_argv = sys.argv[1:] if args_list is None else args_list
     args.used_cli_config = any(
         arg == option or arg.startswith(f"{option}=")
-        for arg in sys.argv[1:]
+        for arg in raw_argv
         for option in EXPERIMENT_CLI_OPTIONS
     )
     active_codes = dict(config_defaults.get("trigger_codes", DEFAULT_TRIGGER_CODES))
@@ -2075,6 +2076,37 @@ def wait_for_continue(event, timeout: float | None = None) -> None:
     return
 
 
+_SOUND_CACHE: dict[str, Any] = {}
+
+
+def get_cached_sound(sound, path: Path | str | None):
+    """Retrieve or instantiate a cached sound.Sound object to prevent stream exhaustion."""
+    if not path or sound is None:
+        return None
+    try:
+        p = str(Path(path).resolve())
+    except Exception:
+        p = str(path)
+    if p not in _SOUND_CACHE:
+        try:
+            _SOUND_CACHE[p] = sound.Sound(p)
+        except Exception as exc:
+            logging.warning("Could not load sound %s: %s", p, exc)
+            return None
+    return _SOUND_CACHE.get(p)
+
+
+def clear_sound_cache() -> None:
+    """Stop all cached sounds and clear cache to drain audio buffers safely."""
+    for snd in list(_SOUND_CACHE.values()):
+        try:
+            if snd is not None:
+                snd.stop()
+        except Exception:
+            pass
+    _SOUND_CACHE.clear()
+
+
 def show_image_slide(win, event, visual, sound, image_path: Path, audio_path: Path | None = None, timeout: float | None = None) -> None:
     image_path = existing_case_variant(image_path)
     if not image_path.exists():
@@ -2082,25 +2114,28 @@ def show_image_slide(win, event, visual, sound, image_path: Path, audio_path: Pa
     slide = visual.ImageStim(win, image=str(image_path), size=(1.333, 1.0), units="height", **get_flip_params())
     
     play_audio = True
-    if CURRENT_ARGS and not CURRENT_ARGS.audio_instructions:
+    if CURRENT_ARGS and not getattr(CURRENT_ARGS, "audio_instructions", True):
         play_audio = False
         
     audio = None
     if play_audio and audio_path:
         audio_path = existing_case_variant(audio_path)
         if audio_path.exists():
-            try:
-                audio = sound.Sound(str(audio_path))
-            except Exception:
-                audio = None
+            audio = get_cached_sound(sound, audio_path)
                 
     if audio:
-        audio.play()
+        try:
+            audio.play()
+        except Exception:
+            pass
     slide.draw()
     win.flip()
     wait_for_continue(event, timeout=timeout)
     if audio:
-        audio.stop()
+        try:
+            audio.stop()
+        except Exception:
+            pass
 
 
 def show_transition_text(win, event, visual, message: str) -> None:
@@ -2176,11 +2211,10 @@ def make_stimuli(win, visual, assets: dict) -> dict:
 
 
 def make_audio_cache(sound, assets: dict) -> dict:
-    cache = {
-        "corollary": sound.Sound(str(assets["corollary"])),
-        "nocorollary": sound.Sound(str(assets["nocorollary"])),
+    return {
+        "corollary": get_cached_sound(sound, assets["corollary"]),
+        "nocorollary": get_cached_sound(sound, assets["nocorollary"]),
     }
-    return cache
 
 
 def set_sound_volume(sound_obj, volume: float) -> None:
@@ -2750,7 +2784,7 @@ def run_trial(
     if trial.auditory_class != "blank" and trial.auditory_offset_s is not None:
         tone_path = paired_tone_path(trial, args, assets)
         paired_tone_file = tone_path.name
-        tone = sound.Sound(str(tone_path))
+        tone = get_cached_sound(sound, tone_path)
         tone_start_s = max(0.0, pre_stim_s + trial.auditory_offset_s)
 
     # Pre-stimulus mask gives room for negative paired-tone offsets.
@@ -3220,18 +3254,25 @@ def show_practice_feedback(
     text = f"Practice Session complete!\n\nAccuracy: {accuracy * 100:.1f}%"
     if mean_rt is not None:
         text += f"\nMean RT: {mean_rt * 1000:.0f} ms"
-    text += "\n\nPress R to repeat practice, or Space to continue to the experiment."
+    if getattr(CURRENT_ARGS, "passive_mode", False):
+        text += "\n\nContinuing automatically..."
+    else:
+        text += "\n\nPress R to repeat practice, or Space / Continue key to continue."
 
     image_path = existing_case_variant(language_dir / f"{feedback}.PNG")
     audio_path = existing_case_variant(language_dir / f"{feedback}.mp3")
-    if audio_path.exists():
+    play_audio = True
+    if CURRENT_ARGS and not getattr(CURRENT_ARGS, "audio_instructions", True):
+        play_audio = False
+
+    audio = None
+    if play_audio and audio_path.exists():
+        audio = get_cached_sound(sound, audio_path)
+    if audio:
         try:
-            audio = sound.Sound(str(audio_path))
             audio.play()
         except Exception:
-            audio = None
-    else:
-        audio = None
+            pass
 
     if image_path.exists():
         image = visual.ImageStim(win, image=str(image_path), pos=adjust_pos((0, 0.14)), size=(1.05, 0.78), units="height", **get_flip_params())
@@ -3240,19 +3281,42 @@ def show_practice_feedback(
     stim.draw()
     win.flip()
 
+    timeout = getattr(CURRENT_ARGS, "slide_timeout", 5.0)
+    max_wait = timeout if (timeout is not None and timeout > 0) else None
+
     event.clearEvents()
-    while True:
-        keys = event.waitKeys(keyList=["r", "space", "escape", "q"])
-        if keys:
-            key = keys[0]
-            if key in ["escape", "q"]:
-                raise KeyboardInterrupt
-            if audio:
+    if getattr(CURRENT_ARGS, "passive_mode", False):
+        keys = event.waitKeys(maxWait=max_wait, keyList=KEYS.get("quit", ["escape", "q"]))
+        if keys and keys[0] in KEYS.get("quit", ["escape", "q"]):
+            raise KeyboardInterrupt
+        if audio:
+            try:
                 audio.stop()
-            if key == "r":
-                return True
-            if key == "space":
-                return False
+            except Exception:
+                pass
+        return False
+
+    allowed = ["r", "escape", "q"]
+    cont_keys = KEYS.get("continue", ["any"])
+    if "any" in cont_keys:
+        allowed = None
+    else:
+        allowed = list(set(allowed + cont_keys + ["space"]))
+
+    keys = event.waitKeys(maxWait=max_wait, keyList=allowed)
+    if audio:
+        try:
+            audio.stop()
+        except Exception:
+            pass
+    if keys:
+        key = keys[0]
+        if key in KEYS.get("quit", ["escape", "q"]):
+            raise KeyboardInterrupt
+        if key == "r":
+            return True
+        return False
+    return False
 
 
 def run_practice_phase(
@@ -3269,28 +3333,22 @@ def run_practice_phase(
     trial_counter: int,
     exp_clock,
     markers: MarkerSender,
+    show_instructions: bool = False,
 ) -> int:
-    # Optional (default off): when args.suppress_practice_markers is set,
-    # only the very first practice trial in the whole phase sends a single
-    # "trial_start" marker, and every other in-trial marker is suppressed
-    # for all practice trials (main-session markers are unaffected). This
-    # keeps practice out of an EEG/marker recording while still logging
-    # practice trials to CSV as normal. Off by default: practice sends
-    # markers exactly like the main session, same as before this option
-    # existed.
     trial_start_marker_sent = False
     for level in levels:
         template_dir = args.resource_root / LEVEL_TEMPLATES[level]
         assets = load_assets(template_dir, args.language)
         stimuli = make_stimuli(win, visual, assets)
         audio_cache = make_audio_cache(sound, assets)
+        should_show_inst = show_instructions
 
         while True:
             practice_trials = list(generate_practice(level, args.practice, rng, args))
             if not practice_trials:
                 break
 
-            if not args.skip_instructions:
+            if should_show_inst and not args.skip_instructions:
                 show_level_instruction(win, event, visual, sound, assets, level, "practice")
 
             practice_rows = []
@@ -3305,14 +3363,13 @@ def run_practice_phase(
                 trial_start_marker_sent = True
                 row["phase"] = "practice"
                 writer.writerow(row)
-                output_file.flush()
+                if hasattr(output_file, "flush"):
+                    output_file.flush()
                 practice_rows.append(row)
-
-            # Practice trials finished - proceed directly to practice feedback
 
             # Check if user wants to repeat
             repeat = False
-            if args.show_feedback:
+            if getattr(args, "show_feedback", True):
                 repeat = show_practice_feedback(
                     win,
                     event,
@@ -3323,6 +3380,7 @@ def run_practice_phase(
                 )
             if not repeat:
                 break
+            should_show_inst = True
 
     return trial_counter
 
@@ -3364,15 +3422,26 @@ def show_feedback(
         text += f"\nAccuracy: {accuracy * 100:.1f}%"
         if mean_rt is not None:
             text += f"\nMean RT: {mean_rt * 1000:.0f} ms"
-    text += f"\n\nPress {hint} to continue"
+    if getattr(CURRENT_ARGS, "passive_mode", False):
+        text += "\n\nContinuing automatically..."
+    else:
+        text += f"\n\nPress {hint} to continue"
 
     image_path = existing_case_variant(language_dir / f"{feedback}.PNG")
     audio_path = existing_case_variant(language_dir / f"{feedback}.mp3")
-    if audio_path.exists():
-        audio = sound.Sound(str(audio_path))
-        audio.play()
-    else:
-        audio = None
+    play_audio = True
+    if CURRENT_ARGS and not getattr(CURRENT_ARGS, "audio_instructions", True):
+        play_audio = False
+
+    audio = None
+    if play_audio and audio_path.exists():
+        audio = get_cached_sound(sound, audio_path)
+    if audio:
+        try:
+            audio.play()
+        except Exception:
+            pass
+
     if image_path.exists():
         image = visual.ImageStim(win, image=str(image_path), pos=adjust_pos((0, 0.14)), size=(1.05, 0.78), units="height", **get_flip_params())
         image.draw()
@@ -3384,7 +3453,10 @@ def show_feedback(
     win.flip()
     wait_for_continue(event, timeout=getattr(CURRENT_ARGS, "slide_timeout", 5.0))
     if audio:
-        audio.stop()
+        try:
+            audio.stop()
+        except Exception:
+            pass
 
 
 def show_session_summary(
@@ -3398,14 +3470,6 @@ def show_session_summary(
 ) -> None:
     if CURRENT_ARGS and not getattr(CURRENT_ARGS, "show_feedback", True):
         return
-    """End-of-run accuracy summary for the main trial block.
-
-    Mirrors show_practice_feedback (which already prints/displays accuracy
-    at the end of practice), but for the full main session: no repeat
-    option, and it is computed over *all* active trials run so far rather
-    than just the most recent couple of blocks (that's what show_feedback,
-    the per-block nudge, already does).
-    """
     active = [row for row in session_rows if row["trial_type"] == "active" and row["accuracy"] is not None]
     if not active:
         return
@@ -3431,17 +3495,25 @@ def show_session_summary(
         text += f"\n\nAccuracy: {accuracy * 100:.1f}%"
         if mean_rt is not None:
             text += f"\nMean RT: {mean_rt * 1000:.0f} ms"
-    text += f"\n\nPress {_continue_hint()} to continue"
+    if getattr(CURRENT_ARGS, "passive_mode", False):
+        text += "\n\nContinuing automatically..."
+    else:
+        text += f"\n\nPress {_continue_hint()} to continue"
 
     image_path = existing_case_variant(language_dir / f"{feedback}.PNG")
     audio_path = existing_case_variant(language_dir / f"{feedback}.mp3")
+    play_audio = True
+    if CURRENT_ARGS and not getattr(CURRENT_ARGS, "audio_instructions", True):
+        play_audio = False
+
     audio = None
-    if audio_path.exists():
+    if play_audio and audio_path.exists():
+        audio = get_cached_sound(sound, audio_path)
+    if audio:
         try:
-            audio = sound.Sound(str(audio_path))
             audio.play()
         except Exception:
-            audio = None
+            pass
 
     if image_path.exists():
         image = visual.ImageStim(win, image=str(image_path), pos=adjust_pos((0, 0.14)), size=(1.05, 0.78), units="height", **get_flip_params())
@@ -3454,7 +3526,10 @@ def show_session_summary(
     win.flip()
     wait_for_continue(event, timeout=getattr(CURRENT_ARGS, "slide_timeout", 5.0))
     if audio:
-        audio.stop()
+        try:
+            audio.stop()
+        except Exception:
+            pass
 
 
 def run_main_level(
@@ -3735,6 +3810,7 @@ def main() -> int:
                 trial_counter,
                 exp_clock,
                 markers,
+                show_instructions=True,
             )
             trigger_onset_global = show_trigger_and_wait(
                 win,
