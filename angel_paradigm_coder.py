@@ -198,6 +198,8 @@ CONFIG_DEFAULTS = {
     "trial_duration": 1.50,
     "inter_trial_jitter": 0.35,
     "visual_distractor_mode": "sync",
+    "central_spacing_pct": 38.0,
+    "distractor_spacing_pct": 50.0,
     "visual_distractor_offset_min": -0.240,
     "visual_distractor_offset_max": 0.160,
     "output_dir": None,
@@ -640,6 +642,16 @@ def parse_args(args_list: list[str] | None = None) -> argparse.Namespace:
         help="Visual distractor timing: with target, jittered from target, or absent. Default: sync.",
     )
     parser.add_argument(
+        "--central-spacing-pct", type=float,
+        default=config_defaults["central_spacing_pct"],
+        help="Center-to-center separation of the two main stimulus locations, as percent of screen width.",
+    )
+    parser.add_argument(
+        "--distractor-spacing-pct", type=float,
+        default=config_defaults["distractor_spacing_pct"],
+        help="Horizontal center-to-center separation of peripheral checkerboards, as percent of screen width.",
+    )
+    parser.add_argument(
         "--visual-distractor-offset-min",
         type=float,
         default=config_defaults["visual_distractor_offset_min"],
@@ -776,6 +788,13 @@ def parse_args(args_list: list[str] | None = None) -> argparse.Namespace:
     )
     args, _unknown = parser.parse_known_args(args_list)
     raw_argv = sys.argv[1:] if args_list is None else args_list
+    # PsychoPy Studio appends its own --prefs-json argument when launching a
+    # local experiment.  Remember that launch context even though argparse
+    # intentionally ignores Studio's private arguments below.
+    args.launched_from_studio = any(
+        arg == "--prefs-json" or arg.startswith("--prefs-json=")
+        for arg in raw_argv
+    )
     args.used_cli_config = any(
         arg == option or arg.startswith(f"{option}=")
         for arg in raw_argv
@@ -841,6 +860,8 @@ EXPERIMENT_CLI_OPTIONS = {
     "--post-mask-min",
     "--post-mask-max",
     "--visual-distractor-mode",
+    "--central-spacing-pct",
+    "--distractor-spacing-pct",
     "--visual-distractor-offset-min",
     "--visual-distractor-offset-max",
     "--output-dir",
@@ -942,12 +963,93 @@ def get_psychopy():
 
 
 def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
-    """Show the configuration dialog. Attempts modern PyQt6 tabbed dialog first;
-    falls back to PsychoPy DlgFromDict if PyQt6 is not available."""
-    res = _show_qt_config_dialog(args)
+    """Show an isolated tabbed dialog, falling back to native PsychoPy pages."""
+    # Direct coder launches use the tabbed dialog; CLI launches skip it.
+    if getattr(args, "no_config_dialog", False) or getattr(args, "used_cli_config", False):
+        return args
+    # Older generated scripts may still call this helper from Studio. Keep
+    # their startup non-modal; current Builder files use show_builder_config_dialog.
+    if getattr(args, "launched_from_studio", False):
+        print(
+            "PsychoPy Studio launch detected: using settings from "
+            f"{DEFAULT_CONFIG.name} (no external setup dialog).",
+            flush=True,
+        )
+        return args
+    res = _show_isolated_tabbed_config_dialog(args, builder=False)
     if res is not None:
         return res
     return _show_psychopy_config_dialog(args)
+
+
+def show_builder_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
+    """Show tabs outside Studio's event loop, or use short native pages."""
+    if getattr(args, "no_config_dialog", False) or getattr(args, "used_cli_config", False):
+        return args
+    try:
+        args = _show_isolated_tabbed_config_dialog(args, builder=True)
+        if args is None:
+            print("ANGEL setup: opening six native setup pages.", flush=True)
+            args = _show_psychopy_config_dialog(args, builder=True)
+    except KeyboardInterrupt:
+        raise SystemExit(0) from None
+    validate_config(args)
+    save_config_defaults(args_to_config(args))
+    print("ANGEL setup complete; starting experiment.", flush=True)
+    return args
+
+
+def _show_isolated_tabbed_config_dialog(
+    args: argparse.Namespace, *, builder: bool
+) -> argparse.Namespace | None:
+    """Keep Qt in a child process so its event loop cannot destabilize Studio."""
+    import subprocess
+    import tempfile
+
+    helper = ROOT / "angel_setup_dialog.py"
+    if not helper.is_file():
+        return None
+    with tempfile.TemporaryDirectory(prefix="angel-setup-") as temp_dir:
+        input_path = Path(temp_dir) / "input.json"
+        output_path = Path(temp_dir) / "output.json"
+        input_path.write_text(
+            json.dumps({"values": args_to_config(args), "builder": builder}),
+            encoding="utf-8",
+        )
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(helper), str(input_path), str(output_path)],
+                cwd=str(ROOT), capture_output=True, text=True, check=False,
+            )
+        except OSError as exc:
+            print(f"WARNING: Tabbed setup unavailable ({exc}); using native pages.", file=sys.stderr)
+            return None
+        if completed.returncode == 2:
+            raise KeyboardInterrupt
+        if completed.returncode != 0 or not output_path.is_file():
+            detail = completed.stderr.strip().splitlines()[-1:] or ["no output"]
+            print(f"WARNING: Tabbed setup unavailable ({detail[0]}); using native pages.", file=sys.stderr)
+            return None
+        values = json.loads(output_path.read_text(encoding="utf-8"))
+    candidate = argparse.Namespace(**vars(args))
+    for key in CONFIG_DEFAULTS:
+        if key not in values:
+            continue
+        value = values[key]
+        if key == "resource_root":
+            value = _resolve_resource_root(value)
+        elif key == "output_dir":
+            value = Path(value).expanduser() if value else None
+        elif key in ("left_keys", "right_keys", "continue_keys", "trigger_keys"):
+            value = parse_keys_list(value)
+        setattr(candidate, key, value)
+    validate_config(candidate)
+    return candidate
+
+
+def _choice_with_current(current: object, choices: Iterable[object]) -> list[object]:
+    """PsychoPy selects the first dropdown entry as its initial value."""
+    return [current, *(choice for choice in choices if choice != current)]
 
 
 
@@ -1488,32 +1590,39 @@ def _show_qt_config_dialog(args: argparse.Namespace) -> argparse.Namespace | Non
         raise KeyboardInterrupt
 
 
-def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
+def _show_psychopy_config_dialog(
+    args: argparse.Namespace, *, builder: bool = False
+) -> argparse.Namespace:
     try:
         from psychopy import gui  # type: ignore
-    except Exception:
+    except Exception as exc:
+        if builder:
+            raise RuntimeError("PsychoPy could not open the ANGEL setup pages") from exc
         return args
 
     run_data = {
         "participant": args.participant,
-        "levels": ["1,2", "1", "2"],
-        "language": ["english", "hindi", "kannada"],
-        "category_set": ["all", "face", "shape"],
-        "blocks_per_level": [str(value) for value in BLOCK_CHOICES],
-        "trials_per_block": TRIALS_PER_BLOCK_CHOICES,
+        "levels": _choice_with_current(args.levels, ["1,2", "1", "2"]),
+        "language": _choice_with_current(args.language, ["english", "hindi", "kannada"]),
+        "category_set": _choice_with_current(args.category_set, ["all", "face", "shape"]),
+        "blocks_per_level": _choice_with_current(str(args.blocks), [str(value) for value in BLOCK_CHOICES]),
+        "trials_per_block": _choice_with_current(args.trials_per_block, TRIALS_PER_BLOCK_CHOICES),
         "practice": args.practice,
         "intermix_level_blocks": args.intermix_level_blocks,
         "fullscreen": args.fullscreen,
         "audio_instructions": args.audio_instructions,
         "skip_instructions": args.skip_instructions,
         "fmri_mode": args.fmri_mode,
+        "passive_mode": args.passive_mode,
+        "tr_s": args.tr_s,
+        "dummy_scans": args.dummy_scans,
+        "slide_timeout": args.slide_timeout,
         "seed_blank_for_random": "" if args.seed is None else str(args.seed),
     }
-    show_dialog_page(
-        gui,
-        run_data,
-        "ANGEL Config 1/3: Run",
-        [
+    if builder:
+        run_data.pop("fullscreen")  # Builder's window settings control display mode.
+    show_dialog_group(gui, run_data, [
+        ("ANGEL setup 1/6: Session", [
             "participant",
             "levels",
             "language",
@@ -1522,13 +1631,19 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
             "trials_per_block",
             "practice",
             "intermix_level_blocks",
+        ]),
+        ("ANGEL setup 2/6: Scanner and instructions", [
             "fullscreen",
             "audio_instructions",
             "skip_instructions",
             "fmri_mode",
+            "passive_mode",
+            "tr_s",
+            "dummy_scans",
+            "slide_timeout",
             "seed_blank_for_random",
-        ],
-    )
+        ]),
+    ])
 
     timing_data = {
         "pre_stim_duration": getattr(args, "pre_stim_duration", 0.240),
@@ -1536,13 +1651,13 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
         "response_window": args.response_window,
         "trial_duration": getattr(args, "trial_duration", 1.500),
         "inter_trial_jitter": getattr(args, "inter_trial_jitter", 0.350),
-        "visual_distractor_mode": ["sync", "desync", "none"],
+        "visual_distractor_mode": _choice_with_current(args.visual_distractor_mode, ["sync", "desync", "none"]),
         "visual_distractor_offset_min": args.visual_distractor_offset_min,
         "visual_distractor_offset_max": args.visual_distractor_offset_max,
-        "paired_tone_offset_mode": ["continuous", "fixed"],
+        "paired_tone_offset_mode": _choice_with_current(args.paired_tone_offset_mode, ["continuous", "fixed"]),
         "paired_tone_offset_min": args.paired_tone_offset_min,
         "paired_tone_offset_max": args.paired_tone_offset_max,
-        "cd_schedule": ["by-block", "within-block", "all-immediate", "all-delayed", "all-none"],
+        "cd_schedule": _choice_with_current(args.cd_schedule, ["by-block", "within-block", "all-immediate", "all-delayed", "all-none"]),
         "level2_cd": args.level2_cd,
         "show_feedback": args.show_feedback,
         "feedback_frequency": getattr(args, "feedback_frequency", 2),
@@ -1552,11 +1667,8 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
         "cd_repeats": args.cd_repeats,
         "cd_repeat_gap": args.cd_repeat_gap,
     }
-    show_dialog_page(
-        gui,
-        timing_data,
-        "ANGEL Config 2/3: Timing/CD",
-        [
+    show_dialog_group(gui, timing_data, [
+        ("ANGEL setup 3/6: Trial timing", [
             "pre_stim_duration",
             "stim_duration",
             "response_window",
@@ -1567,6 +1679,8 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
             "visual_distractor_offset_max",
             "paired_tone_offset_mode",
             "paired_tone_offset_min",
+        ]),
+        ("ANGEL setup 4/6: Tone and feedback", [
             "paired_tone_offset_max",
             "cd_schedule",
             "level2_cd",
@@ -1577,11 +1691,11 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
             "cd_volume",
             "cd_repeats",
             "cd_repeat_gap",
-        ],
-    )
+        ]),
+    ])
 
     io_data = {
-        "marker_mode": ["none", "lsl", "parallel", "cpod", "both"],
+        "marker_mode": _choice_with_current(args.marker_mode, ["none", "lsl", "parallel", "cpod", "both"]),
         "lsl_stream_name": args.lsl_stream_name,
         "parallel_address": args.parallel_address,
         "ttl_pulse_width": args.ttl_pulse_width,
@@ -1593,16 +1707,29 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
         "continue_keys": ",".join(args.continue_keys) if isinstance(args.continue_keys, list) else args.continue_keys,
         "trigger_keys": ",".join(args.trigger_keys) if isinstance(args.trigger_keys, list) else args.trigger_keys,
         "wait_duration_s": args.wait_duration_s,
+        "central_spacing_pct": args.central_spacing_pct,
+        "distractor_spacing_pct": args.distractor_spacing_pct,
         "screen": getattr(args, "screen", 0),
         "flip_horizontal": args.flip_horizontal,
         "flip_vertical": args.flip_vertical,
         "output_dir_blank_for_default": "" if args.output_dir is None else str(args.output_dir),
     }
-    show_dialog_page(
-        gui,
-        io_data,
-        "ANGEL Config 3/3: Output",
-        [
+    if builder:
+        io_data.pop("screen")  # Builder's one-based Screen setting controls display.
+    show_dialog_group(gui, io_data, [
+        ("ANGEL setup 5/6: Keys and display layout", [
+            "left_keys",
+            "right_keys",
+            "continue_keys",
+            "trigger_keys",
+            "wait_duration_s",
+            "central_spacing_pct",
+            "distractor_spacing_pct",
+            "screen",
+            "flip_horizontal",
+            "flip_vertical",
+        ]),
+        ("ANGEL setup 6/6: Markers and output", [
             "marker_mode",
             "lsl_stream_name",
             "parallel_address",
@@ -1610,17 +1737,9 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
             "cpod_pulse_width_ms",
             "cpod_port_blank_for_autoscan",
             "suppress_practice_markers",
-            "left_keys",
-            "right_keys",
-            "continue_keys",
-            "trigger_keys",
-            "wait_duration_s",
-            "screen",
-            "flip_horizontal",
-            "flip_vertical",
             "output_dir_blank_for_default",
-        ],
-    )
+        ]),
+    ])
 
     dialog_data = {}
     dialog_data.update(run_data)
@@ -1664,8 +1783,11 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
     args.cd_repeat_gap = float(_dlg_scalar(dialog_data["cd_repeat_gap"]))
     args.left_keys = parse_keys_list(dialog_data["left_keys"])
     args.right_keys = parse_keys_list(dialog_data["right_keys"])
+    args.continue_keys = parse_keys_list(dialog_data["continue_keys"])
     args.trigger_keys = parse_keys_list(dialog_data["trigger_keys"])
     args.wait_duration_s = float(_dlg_scalar(dialog_data["wait_duration_s"]))
+    args.central_spacing_pct = float(_dlg_scalar(dialog_data["central_spacing_pct"]))
+    args.distractor_spacing_pct = float(_dlg_scalar(dialog_data["distractor_spacing_pct"]))
     args.marker_mode = str(_dlg_scalar(dialog_data["marker_mode"]))
     args.lsl_stream_name = str(_dlg_scalar(dialog_data["lsl_stream_name"]))
     args.parallel_address = str(_dlg_scalar(dialog_data["parallel_address"]))
@@ -1676,10 +1798,16 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
     output_dir = str(_dlg_scalar(dialog_data["output_dir_blank_for_default"])).strip()
     args.output_dir = Path(output_dir).expanduser() if output_dir else None
     args.intermix_level_blocks = bool(_dlg_scalar(dialog_data["intermix_level_blocks"]))
-    args.fullscreen = bool(_dlg_scalar(dialog_data["fullscreen"]))
+    if not builder:
+        args.fullscreen = bool(_dlg_scalar(dialog_data["fullscreen"]))
+        args.screen = int(_dlg_scalar(dialog_data["screen"]))
     args.audio_instructions = bool(_dlg_scalar(dialog_data["audio_instructions"]))
     args.skip_instructions = bool(_dlg_scalar(dialog_data["skip_instructions"]))
     args.fmri_mode = bool(_dlg_scalar(dialog_data["fmri_mode"]))
+    args.passive_mode = bool(_dlg_scalar(dialog_data["passive_mode"]))
+    args.tr_s = float(_dlg_scalar(dialog_data["tr_s"]))
+    args.dummy_scans = int(_dlg_scalar(dialog_data["dummy_scans"]))
+    args.slide_timeout = float(_dlg_scalar(dialog_data["slide_timeout"]))
     args.flip_horizontal = bool(_dlg_scalar(dialog_data["flip_horizontal"]))
     args.flip_vertical = bool(_dlg_scalar(dialog_data["flip_vertical"]))
     seed_value = str(_dlg_scalar(dialog_data["seed_blank_for_random"])).strip()
@@ -1695,14 +1823,103 @@ def _show_psychopy_config_dialog(args: argparse.Namespace) -> argparse.Namespace
     return args
 
 
+SETUP_LABELS = {
+    "participant": "Participant ID",
+    "levels": "Task levels",
+    "language": "Instruction language",
+    "category_set": "Stimulus category",
+    "blocks_per_level": "Blocks per level",
+    "trials_per_block": "Trials per block",
+    "practice": "Practice trials",
+    "intermix_level_blocks": "Intermix levels",
+    "fullscreen": "Fullscreen",
+    "audio_instructions": "Play instruction audio",
+    "skip_instructions": "Skip instructions",
+    "fmri_mode": "Wait for scanner trigger",
+    "passive_mode": "Passive viewing",
+    "tr_s": "Scanner TR (seconds)",
+    "dummy_scans": "Dummy scans after trigger",
+    "slide_timeout": "Feedback slide timeout (s)",
+    "seed_blank_for_random": "Random seed (optional)",
+    "pre_stim_duration": "Pre-stimulus duration (s)",
+    "stim_duration": "Stimulus duration (s)",
+    "response_window": "Response window (s)",
+    "trial_duration": "Trial duration (s)",
+    "inter_trial_jitter": "Between-trial jitter (s)",
+    "visual_distractor_mode": "Visual distractor timing",
+    "central_spacing_pct": "Central pair separation (% screen width)",
+    "distractor_spacing_pct": "Peripheral checkerboard separation (% screen width)",
+    "visual_distractor_offset_min": "Visual offset minimum (s)",
+    "visual_distractor_offset_max": "Visual offset maximum (s)",
+    "paired_tone_offset_mode": "Paired tone timing",
+    "paired_tone_offset_min": "Tone offset minimum (s)",
+    "paired_tone_offset_max": "Tone offset maximum (s)",
+    "cd_schedule": "Feedback tone schedule",
+    "level2_cd": "Level 2 feedback tones",
+    "show_feedback": "Show feedback",
+    "feedback_frequency": "Feedback every N blocks",
+    "feedback_show_accuracy": "Show accuracy",
+    "cd_audio_feedback": "Play feedback tones",
+    "cd_volume": "Feedback tone volume",
+    "cd_repeats": "Feedback tone repeats",
+    "cd_repeat_gap": "Repeat gap (s)",
+    "marker_mode": "Marker output",
+    "lsl_stream_name": "LSL stream name",
+    "parallel_address": "Parallel port address",
+    "ttl_pulse_width": "TTL pulse width (s)",
+    "cpod_pulse_width_ms": "cPod pulse width (ms)",
+    "cpod_port_blank_for_autoscan": "cPod port (auto if blank)",
+    "suppress_practice_markers": "Suppress practice markers",
+    "left_keys": "Left response keys",
+    "right_keys": "Right response keys",
+    "continue_keys": "Continue keys",
+    "trigger_keys": "Scanner trigger keys",
+    "wait_duration_s": "Waiting slide duration (s)",
+    "screen": "Display number",
+    "flip_horizontal": "Mirror horizontally",
+    "flip_vertical": "Mirror vertically",
+    "output_dir_blank_for_default": "Output folder (default if blank)",
+}
+
+SETUP_TIPS = {
+    "central_spacing_pct": "Horizontal center-to-center distance between the two central stimulus locations, as a percentage of screen width.",
+    "distractor_spacing_pct": "Horizontal center-to-center distance between the left and right peripheral checkerboards, as a percentage of screen width.",
+    "fmri_mode": "Enable only for scanner sessions. The task waits for a trigger after practice.",
+    "trigger_keys": "Comma-separated keys sent by the scanner; Space and S work as keyboard triggers.",
+    "dummy_scans": "After the trigger, wait this many TRs before the first main trial.",
+    "slide_timeout": "Feedback and final slides advance after this many seconds; 0 waits for a key.",
+    "passive_mode": "Advance response prompts automatically without requiring participant responses.",
+    "output_dir_blank_for_default": "Leave blank to save in the project's data folder.",
+}
+
+
 def show_dialog_page(gui, data: dict, title: str, order: list[str]) -> None:
-    dlg = gui.DlgFromDict(
-        dictionary=data,
-        title=title,
-        order=order,
-    )
+    from inspect import signature
+
+    display_data = {SETUP_LABELS.get(key, key): value for key, value in data.items()}
+    display_order = [SETUP_LABELS.get(key, key) for key in order]
+    tips = {
+        SETUP_LABELS.get(key, key): tip
+        for key, tip in SETUP_TIPS.items()
+        if key in data
+    }
+    kwargs = dict(dictionary=display_data, title=title, order=display_order, tip=tips)
+    if "alwaysOnTop" in signature(gui.DlgFromDict).parameters:
+        kwargs["alwaysOnTop"] = True
+    dlg = gui.DlgFromDict(**kwargs)
     if not dlg.OK:
         raise KeyboardInterrupt
+    for key in data:
+        data[key] = display_data[SETUP_LABELS.get(key, key)]
+    print(f"{title} accepted.", flush=True)
+
+
+def show_dialog_group(gui, data: dict, pages: list[tuple[str, list[str]]]) -> None:
+    """Keep native setup pages short enough for laptop screens."""
+    for title, keys in pages:
+        page_data = {key: data[key] for key in keys if key in data}
+        show_dialog_page(gui, page_data, title, list(page_data))
+        data.update(page_data)
 
 
 def flatten(items: Iterable[Iterable[str]]) -> list[str]:
@@ -1715,6 +1932,10 @@ def parse_trials_per_block(value: str) -> tuple[int, int]:
 
 
 def validate_config(args: argparse.Namespace) -> None:
+    for name in ("central_spacing_pct", "distractor_spacing_pct"):
+        value = float(getattr(args, name))
+        if not 10.0 <= value <= 90.0:
+            raise SystemExit(f"--{name.replace('_', '-')} must be between 10 and 90 percent.")
     if args.paired_tone_offset_min > args.paired_tone_offset_max:
         raise SystemExit("--paired-tone-offset-min must be <= --paired-tone-offset-max.")
     pre_stim_duration = getattr(args, "pre_stim_duration", 0.240)
@@ -2196,16 +2417,30 @@ def existing_case_variant(path: Path) -> Path:
 
 
 def make_stimuli(win, visual, assets: dict) -> dict:
+    screen_width, screen_height = (float(value) for value in win.size)
+    if screen_width <= 0 or screen_height <= 0:
+        raise ValueError("The experiment window must have a positive screen size.")
+    config = CURRENT_ARGS
+    central_pct = getattr(config, "central_spacing_pct", CONFIG_DEFAULTS["central_spacing_pct"])
+    distractor_pct = getattr(config, "distractor_spacing_pct", CONFIG_DEFAULTS["distractor_spacing_pct"])
+    # PsychoPy `height` units use window height for both axes; convert the
+    # requested fraction of screen width into the corresponding x coordinate.
+    central_x = (central_pct / 100.0) * screen_width / screen_height / 2.0
+    distractor_x = (distractor_pct / 100.0) * screen_width / screen_height / 2.0
     target_size = (0.32, 0.41)
     distractor_size = (0.12, 0.085)
+    left_target_pos = adjust_pos((-central_x, 0))
+    right_target_pos = adjust_pos((central_x, 0))
     return {
-        "left_mask": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((-0.42, 0)), size=target_size, units="height", **get_flip_params()),
-        "right_mask": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((0.42, 0)), size=target_size, units="height", **get_flip_params()),
+        "left_mask": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=left_target_pos, size=target_size, units="height", **get_flip_params()),
+        "right_mask": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=right_target_pos, size=target_size, units="height", **get_flip_params()),
         "fix": visual.ImageStim(win, image=str(assets["fixation"]), pos=adjust_pos((0, 0)), size=(0.075, 0.075), units="height", **get_flip_params()),
-        "top_left_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((-0.18, 0.34)), size=distractor_size, units="height", **get_flip_params()),
-        "top_right_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((0.18, 0.34)), size=distractor_size, units="height", **get_flip_params()),
-        "bottom_left_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((-0.18, -0.34)), size=distractor_size, units="height", **get_flip_params()),
-        "bottom_right_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((0.18, -0.34)), size=distractor_size, units="height", **get_flip_params()),
+        "top_left_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((-distractor_x, 0.34)), size=distractor_size, units="height", **get_flip_params()),
+        "top_right_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((distractor_x, 0.34)), size=distractor_size, units="height", **get_flip_params()),
+        "bottom_left_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((-distractor_x, -0.34)), size=distractor_size, units="height", **get_flip_params()),
+        "bottom_right_distractor": visual.ImageStim(win, image=str(assets["checkerboard"]), pos=adjust_pos((distractor_x, -0.34)), size=distractor_size, units="height", **get_flip_params()),
+        "left_target_pos": left_target_pos,
+        "right_target_pos": right_target_pos,
         "target_size": target_size,
     }
 
@@ -2745,7 +2980,10 @@ def run_trial(
         )
 
     target_path = rng.choice(assets["categories"][trial.stimulus_category])
-    target_pos = adjust_pos((-0.42, 0) if trial.target_side == "left" else (0.42, 0))
+    target_pos = stimuli.get(
+        "left_target_pos" if trial.target_side == "left" else "right_target_pos",
+        adjust_pos((-0.42, 0) if trial.target_side == "left" else (0.42, 0)),
+    )
     target = visual.ImageStim(
         win,
         image=str(target_path),
@@ -2834,6 +3072,12 @@ def run_trial(
     )
     draw_trial_frame(stimuli, target, trial.visual_distractor_pos, show_sync_distractor or show_desync_at_visual)
     win.flip()
+    # Anchor every target-relative timestamp to the flip which actually made
+    # the target visible.  Without this assignment ``visual_onset`` remained
+    # None and the first active trial crashed at ``visual_onset +
+    # stim_duration`` in both Builder and standalone runs.
+    visual_onset = trial_clock.getTime()
+    visual_onset_global = exp_clock.getTime()
     distractor_visible = show_sync_distractor or show_desync_at_visual
     visual_label = f"visual_{trial.frequency_class}"
     side_label = f"visual_{trial.frequency_class}_{trial.target_side}" if trial.target_side else None
@@ -3179,6 +3423,17 @@ def row_from_trial(
     }
 
 
+def activate_experiment_window(win) -> None:
+    """Give the stimulus window keyboard focus after setup and practice dialogs."""
+    handle = getattr(win, "winHandle", None)
+    activate = getattr(handle, "activate", None)
+    if callable(activate):
+        try:
+            activate()
+        except Exception as exc:
+            print(f"WARNING: Could not focus stimulus window: {exc}", file=sys.stderr)
+
+
 def show_trigger_and_wait(
     win, event, core, visual, trigger_keys: list[str], wait_duration: float, exp_clock=None
 ) -> float | None:
@@ -3189,9 +3444,11 @@ def show_trigger_and_wait(
     Returns None if exp_clock wasn't provided (trigger-relative columns will
     then simply stay empty).
     """
+    activate_experiment_window(win)
     stim = visual.TextStim(
         win,
-        text="Ready to start Main Task?\n\nWaiting for trigger...",
+        text=(f"Waiting for scanner trigger ({', '.join(trigger_keys)})..."
+              "\n\nPress a trigger key in this window."),
         color="white",
         height=0.04,
         units="height",
@@ -3560,7 +3817,6 @@ def run_main_level(
         show_level_instruction(win, event, visual, sound, assets, level, "main")
 
     block_rows: list[dict] = []
-    ready_pending = False
     for trial in generate_level_trials(
         level,
         args.blocks,
@@ -3576,8 +3832,6 @@ def run_main_level(
     ):
         if trial.trial_in_block == 1:
             markers.send("block_start")
-            if ready_pending:
-                ready_pending = False
 
         trial_counter += 1
         block_name = f"level{level}_block{trial.block:02d}"
@@ -3598,8 +3852,6 @@ def run_main_level(
                     len(block_rows),
                     total_main_trials,
                 )
-            ready_pending = True
-
         if level == "2" and trial.block == args.blocks // 2 and trial.trial_in_block == block_trial_count:
             reversal = visual.TextStim(
                 win,
@@ -3612,7 +3864,6 @@ def run_main_level(
             reversal.draw()
             win.flip()
             wait_for_continue(event)
-            ready_pending = True
 
     if args.show_feedback:
         show_session_summary(win, event, visual, sound, assets["language"], block_rows, label=f"Level {level} Session")
@@ -3674,7 +3925,6 @@ def run_intermixed_main_levels(
 
     recent_rows: list[dict] = []
     completed_level2_blocks = 0
-    ready_pending = False
     active_instruction_level = None
     welcome_shown = True
 
@@ -3686,13 +3936,8 @@ def run_intermixed_main_levels(
                 show_welcome_slide(win, event, visual, level)
                 welcome_shown = True
             show_level_instruction(win, event, visual, sound, assets, level, "main")
-            show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
-            ready_pending = False
             active_instruction_level = level
         markers.send("block_start")
-        if ready_pending:
-            show_image_slide(win, event, visual, sound, assets["language"] / "Ready.PNG", assets["language"] / "Ready.mp3")
-            ready_pending = False
 
         for trial in block_trials:
             trial_counter += 1
@@ -3711,7 +3956,6 @@ def run_intermixed_main_levels(
             completed_level2_blocks += 1
             if completed_level2_blocks == args.blocks // 2:
                 show_transition_text(win, event, visual, "Rule change\nMeaningful: RIGHT\nAmbiguous: LEFT")
-                ready_pending = True
 
         if mixed_block_index % 2 == 0:
             if args.show_feedback:
@@ -3721,8 +3965,6 @@ def run_intermixed_main_levels(
                     len(recent_rows),
                     total_main_trials,
                 )
-            ready_pending = True
-
     if levels:
         assets = assets_by_level[levels[-1]]
         if args.show_feedback:
@@ -3812,18 +4054,22 @@ def main() -> int:
                 markers,
                 show_instructions=True,
             )
-            trigger_onset_global = show_trigger_and_wait(
-                win,
-                event,
-                core,
-                visual,
-                KEYS["trigger"],
-                args.wait_duration_s,
-                exp_clock=exp_clock,
-            )
-            # Only recorded/used when fmri_mode is on; otherwise this stays
-            # None and every *_from_trigger_s CSV column is simply empty.
-            args.trigger_onset_global = trigger_onset_global if args.fmri_mode else None
+            # Behavioral/EEG runs start immediately.  Requiring a scanner key
+            # here made ordinary command-line runs look frozen at the
+            # "Waiting for trigger" screen; Builder already skips its matching
+            # routine outside fMRI mode, so keep both launch paths consistent.
+            if args.fmri_mode:
+                args.trigger_onset_global = show_trigger_and_wait(
+                    win,
+                    event,
+                    core,
+                    visual,
+                    KEYS["trigger"],
+                    args.wait_duration_s,
+                    exp_clock=exp_clock,
+                )
+            else:
+                args.trigger_onset_global = None
             if args.intermix_level_blocks:
                 trial_counter = run_intermixed_main_levels(
                     levels,

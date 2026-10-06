@@ -280,7 +280,35 @@ flowchart LR
 1. Open **PsychoPy Studio**.
 2. Open `angel_paradigm.psyexp`.
 3. Click the green **Run Experiment** button (or press `Ctrl+R` / `Cmd+R`).
-4. The interactive startup dialog appears, allowing visual selection of parameters.
+4. Use the tabbed setup window to move freely among all settings, then click
+   **Start experiment** once. If the isolated tabbed window is unavailable,
+   six short native PsychoPy pages open instead. Initial values come from
+   `angel_config.json`, and accepted selections are saved for the next run.
+   Fullscreen and screen selection remain in Builder's Experiment Settings.
+
+The **Visual layout** tab controls horizontal center-to-center separation as
+a percentage of screen width. **Central pair separation** defaults to 38%,
+bringing the main stimuli closer together; **Peripheral checkerboard
+separation** defaults to 50%, moving the left/right distractors farther apart.
+Their vertical positions and image sizes are unchanged. The same fields are
+available on native setup page 5 if the tabbed window cannot open.
+
+The instruction slide waits for a keypress without a time limit. Feedback and
+the final slide accept a keypress or finish after `slide_timeout` seconds. If
+Builder regenerates `angel_paradigm.py`, these timings are retained because
+they are defined in `angel_paradigm.psyexp`.
+
+If `fmri_mode` is `true`, the experiment intentionally waits at the scanner
+trigger screen for one of the configured `trigger_keys` (currently `space` or
+`s`). After a trigger, the screen displays the dummy-scan countdown (currently
+6 scans × 2.2 seconds). If the screen stays on “Waiting for scanner trigger,”
+click the experiment window and press a configured key. Set `fmri_mode` to
+`false` for ordinary behavioral/EEG runs.
+
+Session files are written to the project-local `data` folder. Keep
+`angel_paradigm.psyexp`, `angel_paradigm.py`, `angel_paradigm_coder.py`,
+`angel_setup_dialog.py`, `angel_config.json`, and `EPrimeFiles` together when moving the experiment to
+another Windows or macOS computer; no machine-specific absolute path is used.
 
 ### 2. Launching via Command Line
 Run directly using Python in your PsychoPy environment:
@@ -290,13 +318,13 @@ Run directly using Python in your PsychoPy environment:
 python angel_paradigm.py --participant S001 --levels 1,2 --category-set face --language english
 
 # fMRI Mode with TR=2.0s and 5 dummy scans
-python angel_paradigm.py --participant SUB01 --levels 1 --fmri-mode --tr 2.0 --dummy-scans 5
+python angel_paradigm.py --participant SUB01 --levels 1 --fmri-mode --tr-s 2.0 --dummy-scans 5
 
 # Passive viewing mode (no button responses required)
 python angel_paradigm.py --participant SUB02 --levels 1 --passive-mode
 
-# Fast testing run (1 block, 2 practice trials, windowed)
-python angel_paradigm.py --participant test --levels 1 --blocks 1 --practice 2 --no-fullscreen
+# Fast testing run (minimum balanced 4 blocks, no practice, windowed)
+python angel_paradigm.py --participant test --levels 1 --blocks 4 --practice 0 --no-fullscreen
 ```
 
 ---
@@ -322,7 +350,7 @@ All runtime options can be configured either via the startup dialog, command-lin
   "right_keys": "right,slash,2",
   "continue_keys": "any",
   "trigger_keys": "s",
-  "slide_timeout_s": 5.0,
+  "slide_timeout": 5.0,
   "show_feedback": true,
   "show_performance": true,
   "feedback_frequency": 2

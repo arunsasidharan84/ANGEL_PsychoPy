@@ -1,4 +1,4 @@
-<PsychoPy2experiment encoding="utf-8" version="2026.1.3">
+<PsychoPy2experiment encoding="utf-8" version="2024.1.5">
     <Settings>
         <Param name="expName" val="angel_paradigm_builder" valType="str" updates="None" plugin="None"/>
         <Param name="expVersion" val="" valType="str" updates="None" plugin="None"/>
@@ -10,7 +10,7 @@
         <Param name="Incomplete URL" val="" valType="str" updates="None" plugin="None"/>
         <Param name="End Message" val="Thank you for your patience." valType="str" updates="None" plugin="None"/>
         <Param name="Resources" val="[]" valType="list" updates="None" plugin="None"/>
-        <Param name="runMode" val="0" valType="code" updates="None" plugin="None"/>
+        <Param name="runMode" val="False" valType="code" updates="None" plugin="None"/>
         <Param name="Use version" val="" valType="str" updates="None" plugin="None"/>
         <Param name="Enable Escape" val="True" valType="bool" updates="None" plugin="None"/>
         <Param name="rush" val="False" valType="bool" updates="None" plugin="None"/>
@@ -31,7 +31,7 @@
         <Param name="measureFrameRate" val="True" valType="bool" updates="None" plugin="None"/>
         <Param name="frameRate" val="" valType="code" updates="None" plugin="None"/>
         <Param name="frameRateMsg" val="Attempting to measure frame rate of screen, please wait..." valType="str" updates="None" plugin="None"/>
-        <Param name="Data filename" val="u'data/%s_%s_%s' % (engine.CURRENT_ARGS.participant if ('engine' in globals() and hasattr(engine, 'CURRENT_ARGS') and engine.CURRENT_ARGS) else expInfo['participant'], expName, expInfo['date'])" valType="code" updates="None" plugin="None"/>
+        <Param name="Data filename" val="u'%s_%s_%s' % (engine.CURRENT_ARGS.participant, expName, expInfo['date'])" valType="code" updates="None" plugin="None"/>
         <Param name="Data file delimiter" val="auto" valType="str" updates="None" plugin="None"/>
         <Param name="sortColumns" val="time" valType="str" updates="None" plugin="None"/>
         <Param name="colPriority" val="{&quot;thisRow.t&quot;:&quot;priority.CRITICAL&quot;,&quot;expName&quot;:&quot;priority.LOW&quot;}" valType="dict" updates="None" plugin="None"/>
@@ -45,39 +45,41 @@
         <Param name="consoleLoggingLevel" val="warning" valType="code" updates="None" plugin="None"/>
         <Param name="clockFormat" val="float" valType="str" updates="None" plugin="None"/>
         <Param name="eyetracker" val="None" valType="str" updates="None" plugin="None"/>
-        <Param name="gpAddress" val="127.0.0.1" valType="str" updates="None" plugin="None"/>
-        <Param name="gpPort" val="4242" valType="num" updates="None" plugin="None"/>
-        <Param name="elModel" val="EYELINK 1000 DESKTOP" valType="str" updates="None" plugin="None"/>
-        <Param name="elAddress" val="100.1.1.1" valType="str" updates="None" plugin="None"/>
-        <Param name="elSimMode" val="False" valType="bool" updates="None" plugin="None"/>
+        <Param name="gpAddress" val="127.0.0.1" valType="str" updates="None" plugin="undefined"/>
+        <Param name="gpPort" val="4242" valType="num" updates="None" plugin="undefined"/>
+        <Param name="elModel" val="EYELINK 1000 DESKTOP" valType="str" updates="None" plugin="undefined"/>
+        <Param name="elAddress" val="100.1.1.1" valType="str" updates="None" plugin="undefined"/>
+        <Param name="elSimMode" val="False" valType="bool" updates="None" plugin="undefined"/>
         <Param name="mgMove" val="CONTINUOUS" valType="str" updates="None" plugin="None"/>
         <Param name="mgBlink" val="MIDDLE_BUTTON" valType="list" updates="None" plugin="None"/>
         <Param name="mgSaccade" val="0.5" valType="num" updates="None" plugin="None"/>
-        <Param name="elSampleRate" val="1000" valType="num" updates="None" plugin="None"/>
-        <Param name="elTrackEyes" val="RIGHT_EYE" valType="str" updates="None" plugin="None"/>
-        <Param name="elLiveFiltering" val="FILTER_LEVEL_OFF" valType="str" updates="None" plugin="None"/>
-        <Param name="elDataFiltering" val="FILTER_LEVEL_2" valType="str" updates="None" plugin="None"/>
-        <Param name="elTrackingMode" val="PUPIL_CR_TRACKING" valType="str" updates="None" plugin="None"/>
-        <Param name="elPupilAlgorithm" val="ELLIPSE_FIT" valType="str" updates="None" plugin="None"/>
-        <Param name="elPupilMeasure" val="PUPIL_AREA" valType="str" updates="None" plugin="None"/>
-        <Param name="tbModel" val="" valType="str" updates="None" plugin="None"/>
-        <Param name="tbLicenseFile" val="" valType="str" updates="None" plugin="None"/>
-        <Param name="tbSerialNo" val="" valType="str" updates="None" plugin="None"/>
-        <Param name="tbSampleRate" val="60" valType="num" updates="None" plugin="None"/>
-        <Param name="plPupillometryOnly" val="False" valType="bool" updates="None" plugin="None"/>
-        <Param name="plSurfaceName" val="psychopy_iohub_surface" valType="str" updates="None" plugin="None"/>
-        <Param name="plConfidenceThreshold" val="0.6" valType="num" updates="None" plugin="None"/>
-        <Param name="plPupilRemoteAddress" val="127.0.0.1" valType="str" updates="None" plugin="None"/>
-        <Param name="plPupilRemotePort" val="50020" valType="num" updates="None" plugin="None"/>
-        <Param name="plPupilRemoteTimeoutMs" val="1000" valType="num" updates="None" plugin="None"/>
-        <Param name="plPupilCaptureRecordingLocation" val="" valType="str" updates="None" plugin="None"/>
-        <Param name="plCompanionAddress" val="neon.local" valType="str" updates="None" plugin="None"/>
-        <Param name="plCompanionPort" val="8080" valType="num" updates="None" plugin="None"/>
+        <Param name="elSampleRate" val="1000" valType="num" updates="None" plugin="undefined"/>
+        <Param name="elTrackEyes" val="RIGHT_EYE" valType="str" updates="None" plugin="undefined"/>
+        <Param name="elLiveFiltering" val="FILTER_LEVEL_OFF" valType="str" updates="None" plugin="undefined"/>
+        <Param name="elDataFiltering" val="FILTER_LEVEL_2" valType="str" updates="None" plugin="undefined"/>
+        <Param name="elTrackingMode" val="PUPIL_CR_TRACKING" valType="str" updates="None" plugin="undefined"/>
+        <Param name="elPupilAlgorithm" val="ELLIPSE_FIT" valType="str" updates="None" plugin="undefined"/>
+        <Param name="elPupilMeasure" val="PUPIL_AREA" valType="str" updates="None" plugin="undefined"/>
+        <Param name="tbModel" val="" valType="str" updates="None" plugin="undefined"/>
+        <Param name="tbLicenseFile" val="" valType="str" updates="None" plugin="undefined"/>
+        <Param name="tbSerialNo" val="" valType="str" updates="None" plugin="undefined"/>
+        <Param name="tbSampleRate" val="60" valType="num" updates="None" plugin="undefined"/>
+        <Param name="plPupillometryOnly" val="False" valType="bool" updates="None" plugin="undefined"/>
+        <Param name="plSurfaceName" val="psychopy_iohub_surface" valType="str" updates="None" plugin="undefined"/>
+        <Param name="plConfidenceThreshold" val="0.6" valType="num" updates="None" plugin="undefined"/>
+        <Param name="plPupilRemoteAddress" val="127.0.0.1" valType="str" updates="None" plugin="undefined"/>
+        <Param name="plPupilRemotePort" val="50020" valType="num" updates="None" plugin="undefined"/>
+        <Param name="plPupilRemoteTimeoutMs" val="1000" valType="num" updates="None" plugin="undefined"/>
+        <Param name="plPupilCaptureRecordingLocation" val="" valType="str" updates="None" plugin="undefined"/>
+        <Param name="plCompanionAddress" val="neon.local" valType="str" updates="None" plugin="undefined"/>
+        <Param name="plCompanionPort" val="8080" valType="num" updates="None" plugin="undefined"/>
         <Param name="ecSampleRate" val="default" valType="str" updates="None" plugin="None"/>
-        <Param name="keyboardBackend" val="PsychToolbox" valType="str" updates="None" plugin="None"/>
-        <Param name="Audio latency priority" val="use prefs" valType="str" updates="None" plugin="None"/>
+        <Param name="keyboardBackend" val="Pyglet" valType="str" updates="None" plugin="None"/>
+        <Param name="Audio latency priority" val="use prefs" valType="str" updates="None" plugin="undefined"/>
         <Param name="Full-screen size" val="[1280,800]" valType="list" updates="None" plugin="None"/>
-        <Param name="Saved data folder" val="data" valType="str" updates="None" plugin="None"/>
+        <Param name="Saved data folder" val="str(engine.CURRENT_ARGS.output_dir or 'data')" valType="code" updates="None" plugin="undefined"/>
+        <Param name="plCompanionRecordingEnabled" val="True" valType="bool" updates="None" plugin="undefined"/>
+        <Param name="plPupilCaptureRecordingEnabled" val="True" valType="bool" updates="None" plugin="undefined"/>
     </Settings>
     <Routines>
         <Routine name="trial">
@@ -119,7 +121,7 @@
                 <Param name="name" val="init_code" valType="code" updates="None" plugin="None"/>
                 <Param name="Code Type" val="Py" valType="str" updates="None" plugin="None"/>
                 <Param name="disabled" val="False" valType="bool" updates="None" plugin="None"/>
-                <Param name="Before Experiment" val="import angel_paradigm_coder as engine&#10;args = engine.parse_args()&#10;args = engine.show_config_dialog(args)&#10;engine.CURRENT_ARGS = args&#10;" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="Before Experiment" val="import angel_paradigm_coder as engine&#10;args = engine.parse_args()&#10;args = engine.show_builder_config_dialog(args)&#10;engine.CURRENT_ARGS = args&#10;" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="Begin Experiment" val="import random as std_random&#10;args = engine.CURRENT_ARGS&#10;levels = [level.strip() for level in args.levels.split(',') if level.strip()]&#10;engine.validate_config(args)&#10;# Synchronize KEYS and participant ID&#10;engine.KEYS['left'] = engine.parse_keys_list(args.left_keys)&#10;engine.KEYS['right'] = engine.parse_keys_list(args.right_keys)&#10;engine.KEYS['continue'] = engine.parse_keys_list(getattr(args, 'continue_keys', 'any'))&#10;engine.KEYS['trigger'] = engine.parse_keys_list(args.trigger_keys)&#10;KEYS = engine.KEYS&#10;expInfo['participant'] = args.participant&#10;thisExp.extraInfo['participant'] = args.participant&#10;exp_clock = core.Clock()&#10;markers = engine.MarkerSender(args, core, exp_clock)&#10;rng = std_random.Random(args.seed)&#10;assets_by_level = {lvl: engine.load_assets(args.resource_root / engine.LEVEL_TEMPLATES[lvl], args.language) for lvl in levels}&#10;assets = assets_by_level[levels[0]]&#10;trial_counter = 0&#10;main_session_rows = []&#10;# Adapter so engine can log directly to PsychoPy ExperimentHandler&#10;class _PsyWriter:&#10;    def writerow(self, row):&#10;        for k, v in row.items():&#10;            thisExp.addData(k, v)&#10;        thisExp.nextEntry()&#10;class _PsyFile:&#10;    def flush(self): pass&#10;psy_writer = _PsyWriter()&#10;psy_file = _PsyFile()&#10;" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="Begin Routine" val="" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="Each Frame" val="" valType="extendedCode" updates="constant" plugin="None"/>
@@ -201,12 +203,12 @@
                 <Param name="startVal" val="0.0" valType="code" updates="constant" plugin="None"/>
                 <Param name="startEstim" val="" valType="code" updates="None" plugin="None"/>
                 <Param name="startType" val="time (s)" valType="str" updates="constant" plugin="None"/>
-                <Param name="stopVal" val="$(getattr(args, 'slide_timeout', 5.0) if getattr(args, 'slide_timeout', 5.0) &gt; 0 else 999999.0)" valType="code" updates="constant" plugin="None"/>
+                <Param name="stopVal" val="" valType="code" updates="constant" plugin="None"/>
                 <Param name="durationEstim" val="" valType="code" updates="None" plugin="None"/>
                 <Param name="stopType" val="duration (s)" valType="str" updates="constant" plugin="None"/>
                 <Param name="forceEndRoutine" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="registerOn" val="press" valType="str" updates="constant" plugin="None"/>
-                <Param name="allowedKeys" val="" valType="str" updates="constant" plugin="None"/>
+                <Param name="allowedKeys" val="" valType="list" updates="constant" plugin="None"/>
                 <Param name="store" val="last key" valType="str" updates="constant" plugin="None"/>
                 <Param name="storeCorrect" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="correctAns" val="" valType="str" updates="constant" plugin="None"/>
@@ -214,6 +216,7 @@
                 <Param name="syncScreenRefresh" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="disabled" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="discard previous" val="True" valType="bool" updates="constant" plugin="None"/>
+                <Param name="deviceLabel" val="" valType="str" updates="None" plugin="undefined"/>
             </KeyboardComponent>
         </Routine>
         <Routine name="PracticeRoutine">
@@ -274,9 +277,9 @@
                 <Param name="disabled" val="False" valType="bool" updates="None" plugin="None"/>
                 <Param name="Before Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="Begin Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
-                <Param name="Begin Routine" val="if not getattr(args, 'fmri_mode', False):&#10;    continueRoutine = False&#10;else:&#10;    markers.send('trigger_wait_start', 105)&#10;    dummy_n = getattr(args, 'dummy_scans', 5)&#10;    tr_val = getattr(args, 'tr_s', 2.0)&#10;    wait_s = dummy_n * tr_val&#10;    tr_keys = getattr(args, 'trigger_keys', ['s'])&#10;    tr_keys_str = ', '.join(tr_keys) if isinstance(tr_keys, list) else str(tr_keys)&#10;    msg = f'fMRI Scanner Session\n\nWaiting for scanner trigger ({tr_keys_str})...\n\n(Equilibration: {dummy_n} TRs = {wait_s:.1f}s)'&#10;    trigger_text.setText(msg)&#10;" valType="extendedCode" updates="constant" plugin="None"/>
-                <Param name="Each Frame" val="" valType="extendedCode" updates="constant" plugin="None"/>
-                <Param name="End Routine" val="if getattr(args, 'fmri_mode', False):&#10;    trig_t = exp_clock.getTime()&#10;    args.trigger_onset_global = trig_t&#10;    markers.send('trigger_received', 106)&#10;    markers.record_trigger_onset(trig_t)&#10;    dummy_n = getattr(args, 'dummy_scans', 5)&#10;    tr_val = getattr(args, 'tr_s', 2.0)&#10;    wait_s = dummy_n * tr_val&#10;    if wait_s &gt; 0:&#10;        eq_start = exp_clock.getTime()&#10;        while exp_clock.getTime() - eq_start &lt; wait_s:&#10;            rem = wait_s - (exp_clock.getTime() - eq_start)&#10;            trigger_text.setText(f'Scanner Trigger Received!\n\nEquilibrating dummy scans...\n\n{rem:.1f}s remaining')&#10;            trigger_text.draw()&#10;            win.flip()&#10;            if event.getKeys(keyList=['escape']):&#10;                raise KeyboardInterrupt&#10;" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="Begin Routine" val="ANGEL_TRIGGER_KEYS = engine.KEYS['trigger']&#10;if not getattr(args, 'fmri_mode', False):&#10;    continueRoutine = False&#10;else:&#10;    engine.activate_experiment_window(win)&#10;    event.clearEvents(eventType='keyboard')&#10;    markers.send('trigger_wait_start', 105)&#10;    dummy_n = getattr(args, 'dummy_scans', 5)&#10;    tr_val = getattr(args, 'tr_s', 2.0)&#10;    wait_s = dummy_n * tr_val&#10;    tr_keys_str = ', '.join(ANGEL_TRIGGER_KEYS)&#10;    msg = f'fMRI Scanner Session\n\nWaiting for scanner trigger ({tr_keys_str})...\n\nPress a trigger key in this window.\n(Equilibration: {dummy_n} TRs = {wait_s:.1f}s)'&#10;    trigger_text.setText(msg)&#10;" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="Each Frame" val="if getattr(args, 'fmri_mode', False) and trigger_key.status == STARTED:&#10;    fallback_keys = event.getKeys(keyList=ANGEL_TRIGGER_KEYS, timeStamped=exp_clock)&#10;    if fallback_keys:&#10;        trigger_key.keys, args.trigger_onset_global = fallback_keys[-1]&#10;        trigger_key.rt = trigger_key.clock.getTime()&#10;        trigger_key.duration = None&#10;        continueRoutine = False&#10;" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="End Routine" val="if getattr(args, 'fmri_mode', False):&#10;    trig_t = getattr(args, 'trigger_onset_global', None)&#10;    if trig_t is None:&#10;        trig_t = exp_clock.getTime()&#10;    args.trigger_onset_global = trig_t&#10;    markers.send('trigger_received', 106)&#10;    dummy_n = getattr(args, 'dummy_scans', 5)&#10;    tr_val = getattr(args, 'tr_s', 2.0)&#10;    wait_s = dummy_n * tr_val&#10;    if wait_s &gt; 0:&#10;        eq_start = exp_clock.getTime()&#10;        while exp_clock.getTime() - eq_start &lt; wait_s:&#10;            rem = wait_s - (exp_clock.getTime() - eq_start)&#10;            trigger_text.setText(f'Scanner Trigger Received!\n\nEquilibrating dummy scans...\n\n{rem:.1f}s remaining')&#10;            trigger_text.draw()&#10;            win.flip()&#10;            if event.getKeys(keyList=['escape']):&#10;                raise KeyboardInterrupt&#10;" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="End Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="Before JS Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="Begin JS Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
@@ -323,7 +326,7 @@
                 <Param name="stopType" val="duration (s)" valType="str" updates="constant" plugin="None"/>
                 <Param name="forceEndRoutine" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="registerOn" val="press" valType="str" updates="constant" plugin="None"/>
-                <Param name="allowedKeys" val="'s', 'space', '4', '9'" valType="code" updates="constant" plugin="None"/>
+                <Param name="allowedKeys" val="ANGEL_TRIGGER_KEYS" valType="list" updates="constant" plugin="None"/>
                 <Param name="store" val="last key" valType="str" updates="constant" plugin="None"/>
                 <Param name="storeCorrect" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="correctAns" val="" valType="str" updates="constant" plugin="None"/>
@@ -331,6 +334,7 @@
                 <Param name="syncScreenRefresh" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="disabled" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="discard previous" val="True" valType="bool" updates="constant" plugin="None"/>
+                <Param name="deviceLabel" val="" valType="str" updates="None" plugin="undefined"/>
             </KeyboardComponent>
         </Routine>
         <Routine name="TrialRoutine">
@@ -534,7 +538,7 @@
                 <Param name="stopType" val="duration (s)" valType="str" updates="constant" plugin="None"/>
                 <Param name="forceEndRoutine" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="registerOn" val="press" valType="str" updates="constant" plugin="None"/>
-                <Param name="allowedKeys" val="'left', 'right', 'z', 'slash', '1', '2', '4', '9'" valType="code" updates="constant" plugin="None"/>
+                <Param name="allowedKeys" val="'left', 'right', 'z', 'slash', '1', '2', '4', '9'" valType="list" updates="constant" plugin="None"/>
                 <Param name="store" val="last key" valType="str" updates="constant" plugin="None"/>
                 <Param name="storeCorrect" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="correctAns" val="" valType="str" updates="constant" plugin="None"/>
@@ -542,6 +546,7 @@
                 <Param name="syncScreenRefresh" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="disabled" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="discard previous" val="True" valType="bool" updates="constant" plugin="None"/>
+                <Param name="deviceLabel" val="" valType="str" updates="None" plugin="undefined"/>
             </KeyboardComponent>
             <CodeComponent name="trial_runner" plugin="None">
                 <Param name="name" val="trial_runner" valType="code" updates="None" plugin="None"/>
@@ -600,7 +605,7 @@
                 <Param name="startVal" val="0.0" valType="code" updates="constant" plugin="None"/>
                 <Param name="startEstim" val="" valType="code" updates="None" plugin="None"/>
                 <Param name="startType" val="time (s)" valType="str" updates="constant" plugin="None"/>
-                <Param name="stopVal" val="" valType="code" updates="constant" plugin="None"/>
+                <Param name="stopVal" val="$(getattr(args, 'slide_timeout', 5.0) if getattr(args, 'slide_timeout', 5.0) &gt; 0 else 999999.0)" valType="code" updates="constant" plugin="None"/>
                 <Param name="durationEstim" val="" valType="code" updates="None" plugin="None"/>
                 <Param name="stopType" val="duration (s)" valType="str" updates="constant" plugin="None"/>
                 <Param name="color" val="$[1,1,1]" valType="color" updates="constant" plugin="None"/>
@@ -629,7 +634,7 @@
                 <Param name="startVal" val="0.0" valType="code" updates="constant" plugin="None"/>
                 <Param name="startEstim" val="" valType="code" updates="None" plugin="None"/>
                 <Param name="startType" val="time (s)" valType="str" updates="constant" plugin="None"/>
-                <Param name="stopVal" val="" valType="code" updates="constant" plugin="None"/>
+                <Param name="stopVal" val="$(getattr(args, 'slide_timeout', 5.0) if getattr(args, 'slide_timeout', 5.0) &gt; 0 else 999999.0)" valType="code" updates="constant" plugin="None"/>
                 <Param name="durationEstim" val="" valType="code" updates="None" plugin="None"/>
                 <Param name="stopType" val="duration (s)" valType="str" updates="constant" plugin="None"/>
                 <Param name="color" val="white" valType="color" updates="constant" plugin="None"/>
@@ -662,7 +667,7 @@
                 <Param name="stopType" val="duration (s)" valType="str" updates="constant" plugin="None"/>
                 <Param name="forceEndRoutine" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="registerOn" val="press" valType="str" updates="constant" plugin="None"/>
-                <Param name="allowedKeys" val="" valType="str" updates="constant" plugin="None"/>
+                <Param name="allowedKeys" val="" valType="list" updates="constant" plugin="None"/>
                 <Param name="store" val="last key" valType="str" updates="constant" plugin="None"/>
                 <Param name="storeCorrect" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="correctAns" val="" valType="str" updates="constant" plugin="None"/>
@@ -670,6 +675,7 @@
                 <Param name="syncScreenRefresh" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="disabled" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="discard previous" val="True" valType="bool" updates="constant" plugin="None"/>
+                <Param name="deviceLabel" val="" valType="str" updates="None" plugin="undefined"/>
             </KeyboardComponent>
         </Routine>
         <Routine name="End">
@@ -699,13 +705,19 @@
                 <Param name="Each Frame" val="" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="End Routine" val="" valType="extendedCode" updates="constant" plugin="None"/>
                 <Param name="End Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="Before JS Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="Begin JS Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="Begin JS Routine" val="" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="Each JS Frame" val="" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="End JS Routine" val="" valType="extendedCode" updates="constant" plugin="None"/>
+                <Param name="End JS Experiment" val="" valType="extendedCode" updates="constant" plugin="None"/>
             </CodeComponent>
             <ImageComponent name="end_image" plugin="None">
                 <Param name="name" val="end_image" valType="code" updates="constant" plugin="None"/>
                 <Param name="startVal" val="0.0" valType="code" updates="constant" plugin="None"/>
                 <Param name="startEstim" val="" valType="code" updates="None" plugin="None"/>
                 <Param name="startType" val="time (s)" valType="str" updates="constant" plugin="None"/>
-                <Param name="stopVal" val="" valType="code" updates="constant" plugin="None"/>
+                <Param name="stopVal" val="$(getattr(args, 'slide_timeout', 5.0) if getattr(args, 'slide_timeout', 5.0) &gt; 0 else 999999.0)" valType="code" updates="constant" plugin="None"/>
                 <Param name="durationEstim" val="" valType="code" updates="None" plugin="None"/>
                 <Param name="stopType" val="duration (s)" valType="str" updates="constant" plugin="None"/>
                 <Param name="color" val="$[1,1,1]" valType="color" updates="constant" plugin="None"/>
@@ -739,7 +751,7 @@
                 <Param name="stopType" val="duration (s)" valType="str" updates="constant" plugin="None"/>
                 <Param name="forceEndRoutine" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="registerOn" val="press" valType="str" updates="constant" plugin="None"/>
-                <Param name="allowedKeys" val="" valType="str" updates="constant" plugin="None"/>
+                <Param name="allowedKeys" val="" valType="list" updates="constant" plugin="None"/>
                 <Param name="store" val="last key" valType="str" updates="constant" plugin="None"/>
                 <Param name="storeCorrect" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="correctAns" val="" valType="str" updates="constant" plugin="None"/>
@@ -747,6 +759,7 @@
                 <Param name="syncScreenRefresh" val="True" valType="bool" updates="constant" plugin="None"/>
                 <Param name="disabled" val="False" valType="bool" updates="constant" plugin="None"/>
                 <Param name="discard previous" val="True" valType="bool" updates="constant" plugin="None"/>
+                <Param name="deviceLabel" val="" valType="str" updates="None" plugin="undefined"/>
             </KeyboardComponent>
         </Routine>
     </Routines>

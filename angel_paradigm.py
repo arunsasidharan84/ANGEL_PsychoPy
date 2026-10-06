@@ -1,8 +1,8 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 This experiment was created using PsychoPy3 Experiment Builder (v2026.1.3),
-    on Sat Oct  3 17:17:22 2026
+    on Mon Oct  5 21:45:37 2026
 If you publish work using this script the most relevant publication is:
 
     Peirce J, Gray JR, Simpson S, MacAskill M, Höchenberger R, Sogo H, Kastman E, Lindeløv JK. (2019) 
@@ -35,7 +35,7 @@ from psychopy.hardware import keyboard
 # Run 'Before Experiment' code from init_code
 import angel_paradigm_coder as engine
 args = engine.parse_args()
-args = engine.show_config_dialog(args)
+args = engine.show_builder_config_dialog(args)
 engine.CURRENT_ARGS = args
 
 # --- Setup global variables (available in all functions) ---
@@ -127,8 +127,8 @@ def setupData(expInfo, dataDir=None):
     
     # data file name stem = absolute path + name; later add .psyexp, .csv, .log, etc
     if dataDir is None:
-        dataDir = 'data'
-    filename = u'data/%s_%s_%s' % (engine.CURRENT_ARGS.participant if ('engine' in globals() and hasattr(engine, 'CURRENT_ARGS') and engine.CURRENT_ARGS) else expInfo['participant'], expName, expInfo['date'])
+        dataDir = str(engine.CURRENT_ARGS.output_dir or 'data')
+    filename = u'%s_%s_%s' % (engine.CURRENT_ARGS.participant, expName, expInfo['date'])
     # make sure filename is relative to dataDir
     if os.path.isabs(filename):
         dataDir = os.path.commonprefix([dataDir, filename])
@@ -138,7 +138,7 @@ def setupData(expInfo, dataDir=None):
     thisExp = data.ExperimentHandler(
         name=expName, version=expVersion,
         extraInfo=expInfo, runtimeInfo=None,
-        originPath='angel_paradigm.py',
+        originPath='/Users/arunsasidharan/Code/ActiveProjects/ANGEL_PsychoPy/angel_paradigm.py',
         savePickle=True, saveWideText=True,
         dataFileName=dataDir + os.sep + filename, sortColumns='time'
     )
@@ -268,7 +268,7 @@ def setupDevices(expInfo, thisExp, win):
     # create a default keyboard (e.g. to check for escape)
     if deviceManager.getDevice('defaultKeyboard') is None:
         deviceManager.addDevice(
-            deviceClass='keyboard', deviceName='defaultKeyboard', backend='ptb'
+            deviceClass='keyboard', deviceName='defaultKeyboard', backend='event'
         )
     # return True if completed successfully
     return True
@@ -305,7 +305,7 @@ def pauseExperiment(thisExp, win=None, timers=[], currentRoutine=None):
         defaultKeyboard = deviceManager.addKeyboard(
             deviceClass='keyboard',
             deviceName='defaultKeyboard',
-            backend='PsychToolbox',
+            backend='Pyglet',
         )
     # run a while loop while we wait to unpause
     while thisExp.status == PAUSED:
@@ -365,7 +365,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     defaultKeyboard = deviceManager.getDevice('defaultKeyboard')
     if defaultKeyboard is None:
         deviceManager.addDevice(
-            deviceClass='keyboard', deviceName='defaultKeyboard', backend='PsychToolbox'
+            deviceClass='keyboard', deviceName='defaultKeyboard', backend='Pyglet'
         )
     eyetracker = deviceManager.getDevice('eyetracker')
     # make sure we're running in the directory for this experiment
@@ -739,20 +739,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
             waitOnFlip = True
             win.callOnFlip(instruction_key.clock.reset)  # t=0 on next screen flip
             win.callOnFlip(instruction_key.clearEvents, eventType='keyboard')  # clear events on next screen flip
-        
-        # if instruction_key is stopping this frame...
-        if instruction_key.status == STARTED:
-            # is it time to stop? (based on global clock, using actual start)
-            if tThisFlipGlobal > instruction_key.tStartRefresh + (getattr(args, 'slide_timeout', 5.0) if getattr(args, 'slide_timeout', 5.0) > 0 else 999999.0)-frameTolerance:
-                # keep track of stop time/frame for later
-                instruction_key.tStop = t  # not accounting for scr refresh
-                instruction_key.tStopRefresh = tThisFlipGlobal  # on global time
-                instruction_key.frameNStop = frameN  # exact frame index
-                # add timestamp to datafile
-                thisExp.timestampOnFlip(win, 'instruction_key.stopped')
-                # update status
-                instruction_key.status = FINISHED
-                instruction_key.status = FINISHED
         if instruction_key.status == STARTED and not waitOnFlip:
             theseKeys = instruction_key.getKeys(keyList=None, ignoreKeys=["escape"], waitRelease=False)
             _instruction_key_allKeys.extend(theseKeys)
@@ -934,22 +920,27 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     continueRoutine = True
     # update component parameters for each repeat
     # Run 'Begin Routine' code from trigger_code
+    ANGEL_TRIGGER_KEYS = engine.KEYS['trigger']
     if not getattr(args, 'fmri_mode', False):
         continueRoutine = False
     else:
+        engine.activate_experiment_window(win)
+        event.clearEvents(eventType='keyboard')
         markers.send('trigger_wait_start', 105)
         dummy_n = getattr(args, 'dummy_scans', 5)
         tr_val = getattr(args, 'tr_s', 2.0)
         wait_s = dummy_n * tr_val
-        tr_keys = getattr(args, 'trigger_keys', ['s'])
-        tr_keys_str = ', '.join(tr_keys) if isinstance(tr_keys, list) else str(tr_keys)
-        msg = f'fMRI Scanner Session\n\nWaiting for scanner trigger ({tr_keys_str})...\n\n(Equilibration: {dummy_n} TRs = {wait_s:.1f}s)'
+        tr_keys_str = ', '.join(ANGEL_TRIGGER_KEYS)
+        msg = f'fMRI Scanner Session\n\nWaiting for scanner trigger ({tr_keys_str})...\n\nPress a trigger key in this window.\n(Equilibration: {dummy_n} TRs = {wait_s:.1f}s)'
         trigger_text.setText(msg)
     
     # create starting attributes for trigger_key
     trigger_key.keys = []
     trigger_key.rt = []
     _trigger_key_allKeys = []
+    # allowedKeys looks like a variable, so make sure it exists locally
+    if 'ANGEL_TRIGGER_KEYS' in globals():
+        ANGEL_TRIGGER_KEYS = globals()['ANGEL_TRIGGER_KEYS']
     # store start times for TriggerWait
     TriggerWait.tStartRefresh = win.getFutureFlipTime(clock=globalClock)
     TriggerWait.tStart = globalClock.getTime(format='float')
@@ -980,6 +971,15 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         tThisFlipGlobal = win.getFutureFlipTime(clock=None)
         frameN = frameN + 1  # number of completed frames (so 0 is the first frame)
         # update/draw components on each frame
+        # Run 'Each Frame' code from trigger_code
+        if getattr(args, 'fmri_mode', False) and trigger_key.status == STARTED:
+            fallback_keys = event.getKeys(keyList=ANGEL_TRIGGER_KEYS, timeStamped=exp_clock)
+            if fallback_keys:
+                trigger_key.keys, args.trigger_onset_global = fallback_keys[-1]
+                trigger_key.rt = trigger_key.clock.getTime()
+                trigger_key.duration = None
+                continueRoutine = False
+        
         
         # *trigger_text* updates
         
@@ -1015,12 +1015,20 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
             thisExp.timestampOnFlip(win, 'trigger_key.started')
             # update status
             trigger_key.status = STARTED
+            # allowed keys looks like a variable named `ANGEL_TRIGGER_KEYS`
+            if not type(ANGEL_TRIGGER_KEYS) in [list, tuple, np.ndarray]:
+                if not isinstance(ANGEL_TRIGGER_KEYS, str):
+                    ANGEL_TRIGGER_KEYS = str(ANGEL_TRIGGER_KEYS)
+                elif not ',' in ANGEL_TRIGGER_KEYS:
+                    ANGEL_TRIGGER_KEYS = (ANGEL_TRIGGER_KEYS,)
+                else:
+                    ANGEL_TRIGGER_KEYS = eval(ANGEL_TRIGGER_KEYS)
             # keyboard checking is just starting
             waitOnFlip = True
             win.callOnFlip(trigger_key.clock.reset)  # t=0 on next screen flip
             win.callOnFlip(trigger_key.clearEvents, eventType='keyboard')  # clear events on next screen flip
         if trigger_key.status == STARTED and not waitOnFlip:
-            theseKeys = trigger_key.getKeys(keyList=['s', 'space', '4', '9'], ignoreKeys=["escape"], waitRelease=False)
+            theseKeys = trigger_key.getKeys(keyList=list(ANGEL_TRIGGER_KEYS), ignoreKeys=["escape"], waitRelease=False)
             _trigger_key_allKeys.extend(theseKeys)
             if len(_trigger_key_allKeys):
                 trigger_key.keys = _trigger_key_allKeys[-1].name  # just the last key pressed
@@ -1073,10 +1081,11 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     thisExp.addData('TriggerWait.stopped', TriggerWait.tStop)
     # Run 'End Routine' code from trigger_code
     if getattr(args, 'fmri_mode', False):
-        trig_t = exp_clock.getTime()
+        trig_t = getattr(args, 'trigger_onset_global', None)
+        if trig_t is None:
+            trig_t = exp_clock.getTime()
         args.trigger_onset_global = trig_t
         markers.send('trigger_received', 106)
-        markers.record_trigger_onset(trig_t)
         dummy_n = getattr(args, 'dummy_scans', 5)
         tr_val = getattr(args, 'tr_s', 2.0)
         wait_s = dummy_n * tr_val
@@ -1585,6 +1594,20 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
             # update params
             pass
         
+        # if feedback_image is stopping this frame...
+        if feedback_image.status == STARTED:
+            # is it time to stop? (based on global clock, using actual start)
+            if tThisFlipGlobal > feedback_image.tStartRefresh + (getattr(args, 'slide_timeout', 5.0) if getattr(args, 'slide_timeout', 5.0) > 0 else 999999.0)-frameTolerance:
+                # keep track of stop time/frame for later
+                feedback_image.tStop = t  # not accounting for scr refresh
+                feedback_image.tStopRefresh = tThisFlipGlobal  # on global time
+                feedback_image.frameNStop = frameN  # exact frame index
+                # add timestamp to datafile
+                thisExp.timestampOnFlip(win, 'feedback_image.stopped')
+                # update status
+                feedback_image.status = FINISHED
+                feedback_image.setAutoDraw(False)
+        
         # *feedback_text* updates
         
         # if feedback_text is starting this frame...
@@ -1604,6 +1627,20 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         if feedback_text.status == STARTED:
             # update params
             pass
+        
+        # if feedback_text is stopping this frame...
+        if feedback_text.status == STARTED:
+            # is it time to stop? (based on global clock, using actual start)
+            if tThisFlipGlobal > feedback_text.tStartRefresh + (getattr(args, 'slide_timeout', 5.0) if getattr(args, 'slide_timeout', 5.0) > 0 else 999999.0)-frameTolerance:
+                # keep track of stop time/frame for later
+                feedback_text.tStop = t  # not accounting for scr refresh
+                feedback_text.tStopRefresh = tThisFlipGlobal  # on global time
+                feedback_text.frameNStop = frameN  # exact frame index
+                # add timestamp to datafile
+                thisExp.timestampOnFlip(win, 'feedback_text.stopped')
+                # update status
+                feedback_text.status = FINISHED
+                feedback_text.setAutoDraw(False)
         
         # *feedback_key* updates
         waitOnFlip = False
@@ -1766,6 +1803,20 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         if end_image.status == STARTED:
             # update params
             pass
+        
+        # if end_image is stopping this frame...
+        if end_image.status == STARTED:
+            # is it time to stop? (based on global clock, using actual start)
+            if tThisFlipGlobal > end_image.tStartRefresh + (getattr(args, 'slide_timeout', 5.0) if getattr(args, 'slide_timeout', 5.0) > 0 else 999999.0)-frameTolerance:
+                # keep track of stop time/frame for later
+                end_image.tStop = t  # not accounting for scr refresh
+                end_image.tStopRefresh = tThisFlipGlobal  # on global time
+                end_image.frameNStop = frameN  # exact frame index
+                # add timestamp to datafile
+                thisExp.timestampOnFlip(win, 'end_image.stopped')
+                # update status
+                end_image.status = FINISHED
+                end_image.setAutoDraw(False)
         
         # *end_key* updates
         waitOnFlip = False
