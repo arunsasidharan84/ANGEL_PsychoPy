@@ -303,6 +303,17 @@ Builder regenerates `angel_paradigm.py`, these timings are retained because
 they are defined in `angel_paradigm.psyexp`.
 "Skip instructions" hides instruction slides only; it does not remove the
 configured practice trials.
+With it unchecked, instructions appear before practice, again before the
+first main block, and then before every 1st or 2nd block according to
+"Instruction every N blocks" on the Session tab. The run-plan summary states
+whether instruction slides are skipped. This interval is independent of block
+performance feedback.
+
+The Feedback tab has two separate controls: "Feedback tone schedule" selects
+trial-level corollary tone timing (by block, mixed within a block, immediate,
+delayed, or none); "Show feedback" controls the block-performance screen,
+shown every N blocks. "Play feedback tones" mutes or enables the trial-level
+tones without changing their logged conditions.
 
 If `fmri_mode` is `true`, the experiment intentionally waits at the scanner
 trigger screen for one of the configured `trigger_keys` (currently `space` or

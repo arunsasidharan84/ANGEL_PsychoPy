@@ -14,7 +14,8 @@ from pathlib import Path
 TABS = [
     ("Session", ["participant", "levels", "language", "category_set", "blocks",
                  "trials_per_block", "practice", "intermix_level_blocks",
-                 "audio_instructions", "skip_instructions", "passive_mode"]),
+                 "audio_instructions", "skip_instructions", "instruction_frequency",
+                 "passive_mode"]),
     ("Scanner", ["fmri_mode", "tr_s", "dummy_scans", "trigger_keys",
                  "wait_duration_s", "slide_timeout"]),
     ("Timing", ["pre_stim_duration", "stim_duration", "response_window",
@@ -42,6 +43,7 @@ CHOICES = {
     "visual_distractor_mode": ["sync", "desync", "none"],
     "paired_tone_offset_mode": ["continuous", "fixed"],
     "cd_schedule": ["by-block", "within-block", "all-immediate", "all-delayed", "all-none"],
+    "instruction_frequency": [2, 1],
     "marker_mode": ["none", "lsl", "parallel", "cpod", "both"],
 }
 
@@ -49,6 +51,14 @@ LEVEL_LABELS = {
     "1,2": "Levels 1 and 2 (in sequence)",
     "1": "Level 1 only",
     "2": "Level 2 only",
+}
+
+TONE_SCHEDULE_LABELS = {
+    "by-block": "By block — immediate or delayed blocks",
+    "within-block": "Within block — mix immediate and delayed trials",
+    "all-immediate": "Immediate tones on eligible trials",
+    "all-delayed": "Delayed tones on eligible trials",
+    "all-none": "No trial-level tones",
 }
 
 
@@ -93,7 +103,8 @@ def main(input_path: str, output_path: str) -> int:
                 widget = QtWidgets.QComboBox()
                 options = [value, *(option for option in CHOICES[key] if option != value)]
                 for option in options:
-                    widget.addItem(LEVEL_LABELS.get(option, str(option)) if key == "levels" else str(option), option)
+                    label = LEVEL_LABELS.get(option, str(option)) if key == "levels" else TONE_SCHEDULE_LABELS.get(option, str(option)) if key == "cd_schedule" else str(option)
+                    widget.addItem(label, option)
             elif isinstance(value, bool):
                 widget = QtWidgets.QCheckBox()
                 widget.setChecked(value)
@@ -143,13 +154,20 @@ def main(input_path: str, output_path: str) -> int:
         levels_text = LEVEL_LABELS.get(widgets["levels"].currentData(), "Selected levels")
         blocks = widgets["blocks"].currentData()
         practice = widgets["practice"].value()
+        instruction_note = (
+            "Instruction slides skipped."
+            if widgets["skip_instructions"].isChecked()
+            else f"Instructions before practice and main trials, then every {widgets['instruction_frequency'].currentData()} block(s)."
+        )
         run_plan.setText(
-            f"Run plan: {levels_text}; {blocks} blocks and {practice} practice trials per level."
+            f"Run plan: {levels_text}; {blocks} blocks and {practice} practice trials per level. {instruction_note}"
         )
 
     widgets["levels"].currentIndexChanged.connect(update_run_plan)
     widgets["blocks"].currentIndexChanged.connect(update_run_plan)
     widgets["practice"].valueChanged.connect(update_run_plan)
+    widgets["skip_instructions"].toggled.connect(update_run_plan)
+    widgets["instruction_frequency"].currentIndexChanged.connect(update_run_plan)
     update_run_plan()
 
     buttons = QtWidgets.QDialogButtonBox(

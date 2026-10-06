@@ -1155,10 +1155,6 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     for level in levels:
         assets = assets_by_level[level]
         print(f'ANGEL main task: starting level {level} of {args.levels}', flush=True)
-        if level != levels[0] and not getattr(args, 'skip_instructions', False):
-            markers.send('instruction_start', 101)
-            engine.show_level_instruction(win, event, visual, sound, assets, level, 'main')
-            markers.send('instruction_end', 102)
         stimuli = engine.make_stimuli(win, visual, assets)
         audio_cache = engine.make_audio_cache(sound, assets)
         block_rows = []
@@ -1169,6 +1165,10 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
             active_trials, baseline_trials, args.level2_cd
         ):
             if trial.trial_in_block == 1:
+                if engine.main_instruction_due(args, trial.block):
+                    markers.send('instruction_start', 101)
+                    engine.show_level_instruction(win, event, visual, sound, assets, level, 'main')
+                    markers.send('instruction_end', 102)
                 markers.send('block_start', 1)
             trial_counter += 1
             block_name = f'level{level}_block{trial.block:02d}'

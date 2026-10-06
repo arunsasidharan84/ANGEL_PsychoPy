@@ -177,6 +177,7 @@ CONFIG_DEFAULTS = {
     "monitor": "testMonitor",
     "resource_root": "EPrimeFiles",  # relative to this script's folder; stays portable when copied to a new machine
     "skip_instructions": False,
+    "instruction_frequency": 2,
     "category_set": "face",
     "paired_tone_offset_mode": "continuous",
     "paired_tone_offset_min": -0.240,
@@ -413,7 +414,18 @@ def parse_args(args_list: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--skip-instructions",
         action="store_true",
+        dest="skip_instructions",
         help="Skip instruction slides and start directly with trials.",
+    )
+    parser.add_argument(
+        "--show-instructions", action="store_false", dest="skip_instructions",
+        help="Show instruction slides even if saved settings skip them.",
+    )
+    parser.set_defaults(skip_instructions=config_defaults["skip_instructions"])
+    parser.add_argument(
+        "--instruction-frequency", type=int, choices=[1, 2],
+        default=config_defaults["instruction_frequency"],
+        help="Show instructions before main trials and every 1 or 2 blocks.",
     )
     parser.add_argument(
         "--category-set",
@@ -840,6 +852,8 @@ EXPERIMENT_CLI_OPTIONS = {
     "--monitor",
     "--resource-root",
     "--skip-instructions",
+    "--show-instructions",
+    "--instruction-frequency",
     "--category-set",
     "--paired-tone-offset-mode",
     "--paired-tone-offset-min",
@@ -1224,6 +1238,12 @@ def _show_qt_config_dialog(args: argparse.Namespace) -> argparse.Namespace | Non
             self.chk_skip_inst.setChecked(bool(getattr(self.args, "skip_instructions", False)))
             layout.addRow("Skip Instructions:", self.chk_skip_inst)
 
+            self.cb_instruction_frequency = QtWidgets.QComboBox()
+            self.cb_instruction_frequency.addItem("Every 2 blocks", 2)
+            self.cb_instruction_frequency.addItem("Every block", 1)
+            self.cb_instruction_frequency.setCurrentIndex(max(0, self.cb_instruction_frequency.findData(getattr(self.args, "instruction_frequency", 2))))
+            layout.addRow("Instruction reminder:", self.cb_instruction_frequency)
+
             self.chk_passive = QtWidgets.QCheckBox("Passive Viewing Mode (No button press required)")
             self.chk_passive.setChecked(bool(getattr(self.args, "passive_mode", False)))
             layout.addRow("Passive Viewing:", self.chk_passive)
@@ -1547,6 +1567,7 @@ def _show_qt_config_dialog(args: argparse.Namespace) -> argparse.Namespace | Non
             self.args.fullscreen = self.chk_fullscreen.isChecked()
             self.args.audio_instructions = self.chk_audio_inst.isChecked()
             self.args.skip_instructions = self.chk_skip_inst.isChecked()
+            self.args.instruction_frequency = self.cb_instruction_frequency.currentData()
             self.args.passive_mode = self.chk_passive.isChecked()
             self.args.tr_s = self.dsb_tr.value()
             self.args.dummy_scans = self.sb_dummy_scans.value()
@@ -1618,6 +1639,7 @@ def _show_psychopy_config_dialog(
         "fullscreen": args.fullscreen,
         "audio_instructions": args.audio_instructions,
         "skip_instructions": args.skip_instructions,
+        "instruction_frequency": getattr(args, "instruction_frequency", 2),
         "fmri_mode": args.fmri_mode,
         "passive_mode": args.passive_mode,
         "tr_s": args.tr_s,
@@ -1637,6 +1659,7 @@ def _show_psychopy_config_dialog(
             "trials_per_block",
             "practice",
             "intermix_level_blocks",
+            "instruction_frequency",
         ]),
         ("ANGEL setup 2/6: Scanner and instructions", [
             "fullscreen",
@@ -1809,6 +1832,7 @@ def _show_psychopy_config_dialog(
         args.screen = int(_dlg_scalar(dialog_data["screen"]))
     args.audio_instructions = bool(_dlg_scalar(dialog_data["audio_instructions"]))
     args.skip_instructions = bool(_dlg_scalar(dialog_data["skip_instructions"]))
+    args.instruction_frequency = int(_dlg_scalar(dialog_data["instruction_frequency"]))
     args.fmri_mode = bool(_dlg_scalar(dialog_data["fmri_mode"]))
     args.passive_mode = bool(_dlg_scalar(dialog_data["passive_mode"]))
     args.tr_s = float(_dlg_scalar(dialog_data["tr_s"]))
@@ -1841,6 +1865,7 @@ SETUP_LABELS = {
     "fullscreen": "Fullscreen",
     "audio_instructions": "Play instruction audio",
     "skip_instructions": "Skip instructions",
+    "instruction_frequency": "Instruction every N blocks",
     "fmri_mode": "Wait for scanner trigger",
     "passive_mode": "Passive viewing",
     "tr_s": "Scanner TR (seconds)",
@@ -1888,6 +1913,12 @@ SETUP_LABELS = {
 }
 
 SETUP_TIPS = {
+    "skip_instructions": "When checked, no instruction slides appear. Uncheck to show them before practice, before main trials, and between blocks.",
+    "instruction_frequency": "Show the instruction slide before the first main block, then after every 1 or 2 completed blocks (not after the final block).",
+    "cd_schedule": "Trial-level tone condition: by-block alternates immediate/delayed blocks; within-block mixes both; all-immediate, all-delayed, or all-none force one mode. About 20% of active trials have no tone unless all-none.",
+    "show_feedback": "Show the separate block-performance feedback screen. This does not control instruction slides or trial-level feedback tones.",
+    "feedback_frequency": "Display the block-performance feedback screen every 1 or 2 blocks when Show feedback is enabled.",
+    "cd_audio_feedback": "Play trial-level corollary feedback tones. Turn off for silent runs; tone conditions remain in the data.",
     "central_spacing_pct": "Horizontal center-to-center distance between the two central stimulus locations, as a percentage of screen width.",
     "distractor_spacing_pct": "Horizontal center-to-center distance between the left and right peripheral checkerboards, as a percentage of screen width.",
     "fmri_mode": "Enable only for scanner sessions. The task waits for a trigger after practice.",
@@ -2449,6 +2480,14 @@ def show_level_instruction(win, event, visual, sound, assets: dict, level: str, 
         assets["language"] / "InstructionLevel1.PNG",
         assets["language"] / "InstructionLevel1.mp3",
     )
+
+
+def main_instruction_due(args: argparse.Namespace, block: int) -> bool:
+    """Show a reminder before block 1 and every configured block interval."""
+    if getattr(args, "skip_instructions", False):
+        return False
+    interval = max(1, int(getattr(args, "instruction_frequency", 2)))
+    return block >= 1 and (block - 1) % interval == 0
 
 
 def existing_case_variant(path: Path) -> Path:
@@ -3852,10 +3891,6 @@ def run_main_level(
     block_trial_count = active_trials + baseline_trials
     total_main_trials = args.blocks * block_trial_count
 
-    if not args.skip_instructions and args.practice == 0:
-        # Show instruction slide if practice was skipped
-        show_level_instruction(win, event, visual, sound, assets, level, "main")
-
     block_rows: list[dict] = []
     for trial in generate_level_trials(
         level,
@@ -3871,6 +3906,10 @@ def run_main_level(
         args.level2_cd,
     ):
         if trial.trial_in_block == 1:
+            if main_instruction_due(args, trial.block):
+                markers.send("instruction_start")
+                show_level_instruction(win, event, visual, sound, assets, level, "main")
+                markers.send("instruction_end")
             markers.send("block_start")
 
         trial_counter += 1
@@ -3971,7 +4010,7 @@ def run_intermixed_main_levels(
     for mixed_block_index, (level, block_trials) in enumerate(level_blocks, start=1):
         assets = assets_by_level[level]
         stimuli = stimuli_by_level[level]
-        if not args.skip_instructions and level != active_instruction_level:
+        if not args.skip_instructions and (level != active_instruction_level or main_instruction_due(args, mixed_block_index)):
             if not welcome_shown:
                 show_welcome_slide(win, event, visual, level)
                 welcome_shown = True

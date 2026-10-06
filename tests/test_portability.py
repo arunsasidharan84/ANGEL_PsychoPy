@@ -148,6 +148,27 @@ class PortabilityTests(unittest.TestCase):
         )
         self.assertIn("for level in levels:", source)
         self.assertIn("engine.show_level_instruction", source)
+        self.assertIn("engine.main_instruction_due(args, trial.block)", source)
+        self.assertIn("if trial.trial_in_block == 1:", source)
+
+    def test_main_instruction_schedule_is_independent_of_feedback(self):
+        args = SimpleNamespace(skip_instructions=False, instruction_frequency=2, show_feedback=False)
+        self.assertEqual(
+            [block for block in range(1, 6) if engine.main_instruction_due(args, block)],
+            [1, 3, 5],
+        )
+        args.instruction_frequency = 1
+        self.assertEqual(
+            [block for block in range(1, 4) if engine.main_instruction_due(args, block)],
+            [1, 2, 3],
+        )
+        args.skip_instructions = True
+        self.assertFalse(engine.main_instruction_due(args, 1))
+
+    def test_instruction_cli_override_and_saved_interval(self):
+        self.assertEqual(engine.parse_args(["--instruction-frequency", "1"]).instruction_frequency, 1)
+        self.assertTrue(engine.parse_args(["--skip-instructions"]).skip_instructions)
+        self.assertFalse(engine.parse_args(["--show-instructions"]).skip_instructions)
 
     def test_skip_instructions_does_not_discard_practice_trials(self):
         root = ET.parse(ROOT / "angel_paradigm.psyexp").getroot()
