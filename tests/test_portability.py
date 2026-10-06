@@ -122,6 +122,67 @@ class PortabilityTests(unittest.TestCase):
         self.assertTrue(any("fallback_keys = event.getKeys" in value for value in values))
         self.assertFalse(any("record_trigger_onset" in value for value in values))
 
+    def test_builder_instruction_has_keyboard_and_mouse_fallbacks(self):
+        root = ET.parse(ROOT / "angel_paradigm.psyexp").getroot()
+        instruction = next(
+            node for node in root.iter("CodeComponent")
+            if node.attrib.get("name") == "instruction_code"
+        )
+        values = {node.attrib["name"]: node.attrib.get("val", "") for node in instruction.iter("Param")}
+        self.assertIn("activate_experiment_window(win)", values["Begin Routine"])
+        self.assertIn("event.getKeys()", values["Each Frame"])
+        self.assertIn("instruction_mouse.getPressed()", values["Each Frame"])
+
+    def test_two_levels_are_preserved_and_second_instruction_is_shown(self):
+        args = SimpleNamespace(levels="['1', '2']")
+        self.assertEqual(engine.selected_levels(args), ["1", "2"])
+        self.assertEqual(args.levels, "1,2")
+        root = ET.parse(ROOT / "angel_paradigm.psyexp").getroot()
+        main_code = next(
+            node for node in root.iter("CodeComponent")
+            if node.attrib.get("name") == "trial_runner"
+        )
+        source = next(
+            node.attrib["val"] for node in main_code.iter("Param")
+            if node.attrib.get("name") == "Begin Routine"
+        )
+        self.assertIn("for level in levels:", source)
+        self.assertIn("engine.show_level_instruction", source)
+
+    def test_skip_instructions_does_not_discard_practice_trials(self):
+        root = ET.parse(ROOT / "angel_paradigm.psyexp").getroot()
+        practice_code = next(
+            node for node in root.iter("CodeComponent")
+            if node.attrib.get("name") == "practice_code"
+        )
+        source = next(
+            node.attrib["val"] for node in practice_code.iter("Param")
+            if node.attrib.get("name") == "Begin Routine"
+        )
+        self.assertIn("if getattr(args, 'practice', 0) > 0:", source)
+        self.assertNotIn("and not getattr(args, 'skip_instructions'", source)
+
+    def test_instruction_slide_can_advance_with_mouse_click(self):
+        class Mouse:
+            presses = iter([(0, 0, 0), (1, 0, 0)])
+
+            def getPressed(self):
+                return next(self.presses)
+
+        class Event:
+            Mouse = staticmethod(lambda win: Mouse())
+
+            @staticmethod
+            def clearEvents():
+                return None
+
+            @staticmethod
+            def waitKeys(**_kwargs):
+                return None
+
+        win = SimpleNamespace(winHandle=SimpleNamespace(activate=lambda: None))
+        engine.wait_for_continue(Event, timeout=1.0, win=win)
+
     def test_builder_setup_pages_fit_a_laptop_screen(self):
         pages = []
 
@@ -189,6 +250,7 @@ class PortabilityTests(unittest.TestCase):
             self.assertTrue(request["builder"])
             values = request["values"]
             values["central_spacing_pct"] = 42.0
+            values["levels"] = "1,2"
             Path(command[3]).write_text(json.dumps(values), encoding="utf-8")
             return SimpleNamespace(returncode=0, stderr="")
 
@@ -196,7 +258,16 @@ class PortabilityTests(unittest.TestCase):
         with patch("subprocess.run", side_effect=fake_run):
             updated = engine._show_isolated_tabbed_config_dialog(args, builder=True)
         self.assertEqual(updated.central_spacing_pct, 42.0)
+        self.assertEqual(updated.levels, "1,2")
         self.assertNotEqual(args.central_spacing_pct, 42.0)
+
+    def test_builder_launcher_arguments_do_not_silently_skip_setup(self):
+        args = engine.parse_args(["--participant", "studio-test"])
+        self.assertTrue(args.used_cli_config)
+        with patch.object(engine, "_show_isolated_tabbed_config_dialog", return_value=args) as dialog:
+            with patch.object(engine, "save_config_defaults"):
+                engine.show_builder_config_dialog(args)
+        dialog.assert_called_once_with(args, builder=True)
 
     def test_active_trial_records_visual_onset(self):
         args = SimpleNamespace(

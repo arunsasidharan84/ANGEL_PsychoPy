@@ -45,6 +45,12 @@ CHOICES = {
     "marker_mode": ["none", "lsl", "parallel", "cpod", "both"],
 }
 
+LEVEL_LABELS = {
+    "1,2": "Levels 1 and 2 (in sequence)",
+    "1": "Level 1 only",
+    "2": "Level 2 only",
+}
+
 
 def main(input_path: str, output_path: str) -> int:
     from PyQt6 import QtCore, QtWidgets
@@ -87,7 +93,7 @@ def main(input_path: str, output_path: str) -> int:
                 widget = QtWidgets.QComboBox()
                 options = [value, *(option for option in CHOICES[key] if option != value)]
                 for option in options:
-                    widget.addItem(str(option), option)
+                    widget.addItem(LEVEL_LABELS.get(option, str(option)) if key == "levels" else str(option), option)
             elif isinstance(value, bool):
                 widget = QtWidgets.QCheckBox()
                 widget.setChecked(value)
@@ -128,6 +134,23 @@ def main(input_path: str, output_path: str) -> int:
         scroll.setWidgetResizable(True)
         scroll.setWidget(page)
         tabs.addTab(scroll, tab_name)
+
+    run_plan = QtWidgets.QLabel()
+    run_plan.setWordWrap(True)
+    outer.addWidget(run_plan)
+
+    def update_run_plan() -> None:
+        levels_text = LEVEL_LABELS.get(widgets["levels"].currentData(), "Selected levels")
+        blocks = widgets["blocks"].currentData()
+        practice = widgets["practice"].value()
+        run_plan.setText(
+            f"Run plan: {levels_text}; {blocks} blocks and {practice} practice trials per level."
+        )
+
+    widgets["levels"].currentIndexChanged.connect(update_run_plan)
+    widgets["blocks"].currentIndexChanged.connect(update_run_plan)
+    widgets["practice"].valueChanged.connect(update_run_plan)
+    update_run_plan()
 
     buttons = QtWidgets.QDialogButtonBox(
         QtWidgets.QDialogButtonBox.StandardButton.Ok |

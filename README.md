@@ -293,10 +293,16 @@ separation** defaults to 50%, moving the left/right distractors farther apart.
 Their vertical positions and image sizes are unchanged. The same fields are
 available on native setup page 5 if the tabbed window cannot open.
 
-The instruction slide waits for a keypress without a time limit. Feedback and
+The instruction slide waits for a keypress or a fresh mouse click in the
+experiment window; it does not time out. A two-level selection runs Level 1
+then Level 2, with separate practice and main trials for each. The setup
+window displays this run plan, and the selected levels are recorded in the
+session data. Feedback and
 the final slide accept a keypress or finish after `slide_timeout` seconds. If
 Builder regenerates `angel_paradigm.py`, these timings are retained because
 they are defined in `angel_paradigm.psyexp`.
+"Skip instructions" hides instruction slides only; it does not remove the
+configured practice trials.
 
 If `fmri_mode` is `true`, the experiment intentionally waits at the scanner
 trigger screen for one of the configured `trigger_keys` (currently `space` or

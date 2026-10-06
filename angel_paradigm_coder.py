@@ -984,7 +984,9 @@ def show_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
 
 def show_builder_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
     """Show tabs outside Studio's event loop, or use short native pages."""
-    if getattr(args, "no_config_dialog", False) or getattr(args, "used_cli_config", False):
+    # Builder's launcher may pass experiment-looking arguments of its own on
+    # Windows. Only an explicit opt-out should suppress the setup window.
+    if getattr(args, "no_config_dialog", False):
         return args
     try:
         args = _show_isolated_tabbed_config_dialog(args, builder=True)
@@ -995,7 +997,11 @@ def show_builder_config_dialog(args: argparse.Namespace) -> argparse.Namespace:
         raise SystemExit(0) from None
     validate_config(args)
     save_config_defaults(args_to_config(args))
-    print("ANGEL setup complete; starting experiment.", flush=True)
+    print(
+        f"ANGEL setup complete: levels {' then '.join(selected_levels(args))}; "
+        f"{args.blocks} blocks and {args.practice} practice trials per level.",
+        flush=True,
+    )
     return args
 
 
@@ -1931,7 +1937,23 @@ def parse_trials_per_block(value: str) -> tuple[int, int]:
     return int(active), int(baseline)
 
 
+def selected_levels(args: argparse.Namespace) -> list[str]:
+    """Normalize a setup choice and preserve both levels in their run order."""
+    raw = getattr(args, "levels", "")
+    if isinstance(raw, (list, tuple)):
+        parts = [str(item).strip() for item in raw]
+    else:
+        clean = str(raw).translate(str.maketrans("", "", "[]'\" "))
+        parts = clean.split(",")
+    levels = list(dict.fromkeys(part for part in parts if part))
+    if not levels or any(level not in LEVEL_TEMPLATES for level in levels):
+        raise SystemExit(f"Invalid level selection {raw!r}. Choose 1, 2, or 1,2.")
+    args.levels = ",".join(levels)
+    return levels
+
+
 def validate_config(args: argparse.Namespace) -> None:
+    selected_levels(args)
     for name in ("central_spacing_pct", "distractor_spacing_pct"):
         value = float(getattr(args, name))
         if not 10.0 <= value <= 90.0:
@@ -2284,17 +2306,42 @@ def _continue_hint() -> str:
     return " / ".join(keys)
 
 
-def wait_for_continue(event, timeout: float | None = None) -> None:
+def wait_for_continue(
+    event, timeout: float | None = None, win=None,
+    allowed_keys: list[str] | None = None,
+) -> str | None:
+    from time import monotonic
+
     if timeout is None and CURRENT_ARGS:
         timeout = getattr(CURRENT_ARGS, "slide_timeout", 5.0)
+    if win is not None:
+        activate_experiment_window(win)
+    mouse = None
+    if win is not None and hasattr(event, "Mouse"):
+        try:
+            mouse = event.Mouse(win=win)
+        except Exception as exc:
+            print(f"WARNING: Mouse input unavailable on slide: {exc}", file=sys.stderr)
+    mouse_was_down = any(mouse.getPressed()) if mouse is not None else False
     event.clearEvents()
-    allowed = None if "any" in KEYS.get("continue", ["any"]) else (KEYS.get("continue", []) + KEYS.get("quit", ["escape", "q"]))
-    max_wait = timeout if (timeout is not None and timeout > 0) else None
-    keys = event.waitKeys(maxWait=max_wait, keyList=allowed)
-    if keys and keys[0] in KEYS.get("quit", ["escape", "q"]):
-        raise KeyboardInterrupt
-    # If key pressed or timeout expired, advance immediately
-    return
+    allowed = allowed_keys
+    if allowed is None:
+        allowed = None if "any" in KEYS.get("continue", ["any"]) else (KEYS.get("continue", []) + KEYS.get("quit", ["escape", "q"]))
+    deadline = monotonic() + timeout if timeout is not None and timeout > 0 else None
+    while True:
+        if deadline is not None and monotonic() >= deadline:
+            return None
+        poll_time = min(0.05, max(0.001, deadline - monotonic())) if deadline else 0.05
+        keys = event.waitKeys(maxWait=poll_time, keyList=allowed)
+        if keys:
+            if keys[0] in KEYS.get("quit", ["escape", "q"]):
+                raise KeyboardInterrupt
+            return keys[0]
+        if mouse is not None:
+            mouse_down = any(mouse.getPressed())
+            if mouse_down and not mouse_was_down:
+                return "mouse"
+            mouse_was_down = mouse_down
 
 
 _SOUND_CACHE: dict[str, Any] = {}
@@ -2351,7 +2398,7 @@ def show_image_slide(win, event, visual, sound, image_path: Path, audio_path: Pa
             pass
     slide.draw()
     win.flip()
-    wait_for_continue(event, timeout=timeout)
+    wait_for_continue(event, timeout=timeout, win=win)
     if audio:
         try:
             audio.stop()
@@ -2371,7 +2418,7 @@ def show_transition_text(win, event, visual, message: str) -> None:
     )
     stim.draw()
     win.flip()
-    wait_for_continue(event)
+    wait_for_continue(event, win=win)
 
 
 def show_welcome_slide(win, event, visual, level: str, phase: str = "main") -> None:
@@ -2390,7 +2437,7 @@ def show_welcome_slide(win, event, visual, level: str, phase: str = "main") -> N
     )
     stim.draw()
     win.flip()
-    wait_for_continue(event)
+    wait_for_continue(event, win=win)
 
 
 def show_level_instruction(win, event, visual, sound, assets: dict, level: str, phase: str) -> None:
@@ -3539,13 +3586,11 @@ def show_practice_feedback(
     win.flip()
 
     timeout = getattr(CURRENT_ARGS, "slide_timeout", 5.0)
-    max_wait = timeout if (timeout is not None and timeout > 0) else None
-
-    event.clearEvents()
     if getattr(CURRENT_ARGS, "passive_mode", False):
-        keys = event.waitKeys(maxWait=max_wait, keyList=KEYS.get("quit", ["escape", "q"]))
-        if keys and keys[0] in KEYS.get("quit", ["escape", "q"]):
-            raise KeyboardInterrupt
+        wait_for_continue(
+            event, timeout=timeout, win=win,
+            allowed_keys=KEYS.get("quit", ["escape", "q"]),
+        )
         if audio:
             try:
                 audio.stop()
@@ -3560,20 +3605,13 @@ def show_practice_feedback(
     else:
         allowed = list(set(allowed + cont_keys + ["space"]))
 
-    keys = event.waitKeys(maxWait=max_wait, keyList=allowed)
+    key = wait_for_continue(event, timeout=timeout, win=win, allowed_keys=allowed)
     if audio:
         try:
             audio.stop()
         except Exception:
             pass
-    if keys:
-        key = keys[0]
-        if key in KEYS.get("quit", ["escape", "q"]):
-            raise KeyboardInterrupt
-        if key == "r":
-            return True
-        return False
-    return False
+    return key == "r"
 
 
 def run_practice_phase(
@@ -3598,7 +3636,9 @@ def run_practice_phase(
         assets = load_assets(template_dir, args.language)
         stimuli = make_stimuli(win, visual, assets)
         audio_cache = make_audio_cache(sound, assets)
-        should_show_inst = show_instructions
+        # Builder presents the first level's instruction in its own routine.
+        # A second selected level still needs its distinct practice briefing.
+        should_show_inst = show_instructions or level != levels[0]
 
         while True:
             practice_trials = list(generate_practice(level, args.practice, rng, args))
@@ -3708,7 +3748,7 @@ def show_feedback(
     stim = visual.TextStim(win, text=text, pos=adjust_pos((0, -0.34)), color="white", height=0.035, units="height", **get_flip_params())
     stim.draw()
     win.flip()
-    wait_for_continue(event, timeout=getattr(CURRENT_ARGS, "slide_timeout", 5.0))
+    wait_for_continue(event, timeout=getattr(CURRENT_ARGS, "slide_timeout", 5.0), win=win)
     if audio:
         try:
             audio.stop()
@@ -3781,7 +3821,7 @@ def show_session_summary(
     stim = visual.TextStim(win, text=text, pos=adjust_pos((0, -0.34)), color="white", height=0.035, units="height", **get_flip_params())
     stim.draw()
     win.flip()
-    wait_for_continue(event, timeout=getattr(CURRENT_ARGS, "slide_timeout", 5.0))
+    wait_for_continue(event, timeout=getattr(CURRENT_ARGS, "slide_timeout", 5.0), win=win)
     if audio:
         try:
             audio.stop()
@@ -3863,7 +3903,7 @@ def run_main_level(
             )
             reversal.draw()
             win.flip()
-            wait_for_continue(event)
+            wait_for_continue(event, win=win)
 
     if args.show_feedback:
         show_session_summary(win, event, visual, sound, assets["language"], block_rows, label=f"Level {level} Session")
@@ -3993,11 +4033,13 @@ def main() -> int:
     # always run before the trigger wait, so they never get a trigger
     # reference -- their *_from_trigger_s columns are simply empty.
     args.trigger_onset_global = None
-    levels = [level.strip() for level in args.levels.split(",") if level.strip()]
-    invalid = [level for level in levels if level not in LEVEL_TEMPLATES]
-    if invalid:
-        raise SystemExit(f"Invalid level(s): {invalid}. Use 1, 2, or 1,2.")
     validate_config(args)
+    levels = selected_levels(args)
+    print(
+        f"ANGEL run plan: levels {' then '.join(levels)}; "
+        f"{args.blocks} blocks and {args.practice} practice trials per level.",
+        flush=True,
+    )
 
     KEYS["left"] = parse_keys_list(args.left_keys)
     KEYS["right"] = parse_keys_list(args.right_keys)

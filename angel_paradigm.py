@@ -1,8 +1,8 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-This experiment was created using PsychoPy3 Experiment Builder (v2026.1.3),
-    on Mon Oct  5 21:45:37 2026
+This experiment was created using PsychoPy3 Experiment Builder (v2026.2.4),
+    on Tue Oct  6 19:13:45 2026
 If you publish work using this script the most relevant publication is:
 
     Peirce J, Gray JR, Simpson S, MacAskill M, Höchenberger R, Sogo H, Kastman E, Lindeløv JK. (2019) 
@@ -44,7 +44,7 @@ deviceManager = hardware.DeviceManager()
 # ensure that relative paths start from the same directory as this script
 _thisDir = os.path.dirname(os.path.abspath(__file__))
 # store info about the experiment session
-psychopyVersion = '2026.1.3'
+psychopyVersion = '2026.2.4'
 expName = 'angel_paradigm_builder'  # from the Builder filename that created this script
 expVersion = ''
 # a list of functions to run when the experiment ends (starts off blank)
@@ -138,7 +138,7 @@ def setupData(expInfo, dataDir=None):
     thisExp = data.ExperimentHandler(
         name=expName, version=expVersion,
         extraInfo=expInfo, runtimeInfo=None,
-        originPath='/Users/arunsasidharan/Code/ActiveProjects/ANGEL_PsychoPy/angel_paradigm.py',
+        originPath='angel_paradigm.py',
         savePickle=True, saveWideText=True,
         dataFileName=dataDir + os.sep + filename, sortColumns='time'
     )
@@ -386,8 +386,10 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     # Run 'Begin Experiment' code from init_code
     import random as std_random
     args = engine.CURRENT_ARGS
-    levels = [level.strip() for level in args.levels.split(',') if level.strip()]
     engine.validate_config(args)
+    levels = engine.selected_levels(args)
+    thisExp.extraInfo['selected_levels'] = args.levels
+    print(f'ANGEL running levels: {args.levels}; blocks per level: {args.blocks}', flush=True)
     # Synchronize KEYS and participant ID
     engine.KEYS['left'] = engine.parse_keys_list(args.left_keys)
     engine.KEYS['right'] = engine.parse_keys_list(args.right_keys)
@@ -427,7 +429,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         color=[1,1,1], colorSpace='rgb', opacity=None,
         flipHoriz=False, flipVert=False,
         texRes=128.0, interpolate=True, depth=-1.0)
-    instruction_key = keyboard.Keyboard(deviceName='defaultKeyboard')
+    instruction_key = keyboard.Keyboard(deviceName='defaultKeyboard', backend='Pyglet')
     
     # --- Initialize components for Routine "PracticeRoutine" ---
     
@@ -439,7 +441,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         color='white', colorSpace='rgb', opacity=None, 
         languageStyle='LTR',
         depth=-1.0);
-    trigger_key = keyboard.Keyboard(deviceName='defaultKeyboard')
+    trigger_key = keyboard.Keyboard(deviceName='defaultKeyboard', backend='Pyglet')
     
     # --- Initialize components for Routine "TrialRoutine" ---
     fixation = visual.ImageStim(
@@ -490,7 +492,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         color=[1,1,1], colorSpace='rgb', opacity=None,
         flipHoriz=False, flipVert=False,
         texRes=128.0, interpolate=True, depth=-5.0)
-    response_key = keyboard.Keyboard(deviceName='defaultKeyboard')
+    response_key = keyboard.Keyboard(deviceName='defaultKeyboard', backend='Pyglet')
     # Run 'Begin Experiment' code from trial_runner
     trials = []
     
@@ -511,7 +513,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         color='white', colorSpace='rgb', opacity=None, 
         languageStyle='LTR',
         depth=-2.0);
-    feedback_key = keyboard.Keyboard(deviceName='defaultKeyboard')
+    feedback_key = keyboard.Keyboard(deviceName='defaultKeyboard', backend='Pyglet')
     
     # --- Initialize components for Routine "End" ---
     end_image = visual.ImageStim(
@@ -522,7 +524,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         color=[1,1,1], colorSpace='rgb', opacity=None,
         flipHoriz=False, flipVert=False,
         texRes=128.0, interpolate=True, depth=-1.0)
-    end_key = keyboard.Keyboard(deviceName='defaultKeyboard')
+    end_key = keyboard.Keyboard(deviceName='defaultKeyboard', backend='Pyglet')
     
     # create some handy timers
     
@@ -653,6 +655,13 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     if getattr(args, 'skip_instructions', False):
         continueRoutine = False
     else:
+        engine.activate_experiment_window(win)
+        event.clearEvents(eventType='keyboard')
+        try:
+            instruction_mouse = event.Mouse(win=win)
+        except Exception:
+            instruction_mouse = None
+        instruction_mouse_was_down = any(instruction_mouse.getPressed()) if instruction_mouse is not None else False
         markers.send('instruction_start', 101)
         inst_img = str(assets['language'] / 'InstructionLevel1.PNG')
         instruction_image.setImage(inst_img)
@@ -700,6 +709,19 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
         tThisFlipGlobal = win.getFutureFlipTime(clock=None)
         frameN = frameN + 1  # number of completed frames (so 0 is the first frame)
         # update/draw components on each frame
+        # Run 'Each Frame' code from instruction_code
+        if not getattr(args, 'skip_instructions', False) and instruction_key.status == STARTED:
+            fallback_keys = event.getKeys()
+            if any(key in engine.KEYS['quit'] for key in fallback_keys):
+                raise KeyboardInterrupt
+            mouse_down = any(instruction_mouse.getPressed()) if instruction_mouse is not None else False
+            if fallback_keys or (mouse_down and not instruction_mouse_was_down):
+                instruction_key.keys = fallback_keys[-1] if fallback_keys else 'mouse'
+                instruction_key.rt = instruction_key.clock.getTime()
+                instruction_key.duration = None
+                continueRoutine = False
+            instruction_mouse_was_down = mouse_down
+
         
         # *instruction_image* updates
         
@@ -823,7 +845,7 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     # ==============================================================================
     # ANGEL PRACTICE CONTROLLER: RUNS STRICTLY BEFORE SCANNER TRIGGER WAIT
     # ==============================================================================
-    if getattr(args, 'practice', 0) > 0 and not getattr(args, 'skip_instructions', False):
+    if getattr(args, 'practice', 0) > 0:
         markers.send('practice_start', 103)
         trial_counter = engine.run_practice_phase(
             levels, args, win, core, event, visual, sound,
@@ -1132,6 +1154,11 @@ def run(expInfo, thisExp, win, globalClock=None, thisSession=None):
     total_main_trials = args.blocks * block_trial_count
     for level in levels:
         assets = assets_by_level[level]
+        print(f'ANGEL main task: starting level {level} of {args.levels}', flush=True)
+        if level != levels[0] and not getattr(args, 'skip_instructions', False):
+            markers.send('instruction_start', 101)
+            engine.show_level_instruction(win, event, visual, sound, assets, level, 'main')
+            markers.send('instruction_end', 102)
         stimuli = engine.make_stimuli(win, visual, assets)
         audio_cache = engine.make_audio_cache(sound, assets)
         block_rows = []
